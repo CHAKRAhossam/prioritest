@@ -62,6 +62,7 @@ docker-compose up -d
 ## 🔗 Liens
 
 - **GitLab** : https://gitlab.com/chakrahossam-group/prioritest
+- **GitHub** : https://github.com/CHAKRAhossam/prioritest
 - **Jira** : https://prioritest.atlassian.net/browse/MTP
 - **Board Scrum** : https://prioritest.atlassian.net/jira/software/projects/MTP/boards/134
 
