@@ -56,8 +56,7 @@ docker-compose up -d
 
 ## 📚 Documentation
 
-- `PROJET_ML_TEST_PRIORITIZATION.md` : Vue d'ensemble complète du projet
-- `TACHES_PAR_PERSONNE.md` : Répartition détaillée des tâches
+- `STRUCTURE_PROJET.md` : Structure détaillée du projet
 
 ## 🔗 Liens
 
