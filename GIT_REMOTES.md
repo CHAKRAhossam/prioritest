@@ -21,10 +21,17 @@ Le remote `origin` est configuré pour pousser vers les deux repos en même temp
 ### Pousser vers les deux repos
 
 ```bash
+# Méthode 1 : Push automatique vers les deux
 git push origin main
+
+# Méthode 2 : Utiliser le script PowerShell (Windows)
+.\push-all.ps1
+
+# Méthode 3 : Utiliser le script Bash (Linux/Mac)
+./push-all.sh
 ```
 
-Cette commande poussera automatiquement vers GitLab ET GitHub.
+La commande `git push origin main` poussera automatiquement vers GitLab ET GitHub grâce à la configuration des deux `pushurl`.
 
 ### Pousser vers un seul repo
 
