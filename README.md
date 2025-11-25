@@ -36,8 +36,8 @@ PRIORITEST/
 
 ```bash
 # Cloner le repository
-git clone <votre-repo-gitlab>
-cd PRIORITEST
+git clone https://gitlab.com/chakrahossam-group/prioritest.git
+cd prioritest
 
 # Installer les dépendances
 pip install -r requirements.txt
@@ -61,6 +61,7 @@ docker-compose up -d
 
 ## 🔗 Liens
 
+- **GitLab** : https://gitlab.com/chakrahossam-group/prioritest
 - **Jira** : https://prioritest.atlassian.net/browse/MTP
 - **Board Scrum** : https://prioritest.atlassian.net/jira/software/projects/MTP/boards/134
 
