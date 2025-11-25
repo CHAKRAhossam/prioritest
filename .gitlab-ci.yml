@@ -1,0 +1,49 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# Test stage
+test:
+  stage: test
+  image: python:3.11
+  before_script:
+    - pip install -r requirements.txt
+  script:
+    - echo "Running tests..."
+    # Ajouter les commandes de test ici
+  only:
+    - merge_requests
+    - main
+
+# Build stage
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "Building Docker images..."
+    # Ajouter les commandes de build ici
+  only:
+    - main
+
+# Deploy stage
+deploy:
+  stage: deploy
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - echo "Deploying..."
+    # Ajouter les commandes de déploiement ici
+  only:
+    - main
+  when: manual
+

@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # Base de données
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: prioritest-postgres
+    environment:
+      POSTGRES_DB: prioritest
+      POSTGRES_USER: prioritest
+      POSTGRES_PASSWORD: prioritest
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prioritest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO pour stockage objets
+  minio:
+    image: minio/minio:latest
+    container_name: prioritest-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: prioritest-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: prioritest-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # MLflow
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.8.1
+    container_name: prioritest-mlflow
+    command: mlflow server --backend-store-uri postgresql://prioritest:prioritest@postgres:5432/prioritest --default-artifact-root s3://mlflow/artifacts --host 0.0.0.0 --port 5000
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    depends_on:
+      - postgres
+      - minio
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  default:
+    name: prioritest-network
