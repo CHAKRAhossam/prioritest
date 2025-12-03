@@ -6,7 +6,25 @@
 
 Le repository principal est sur GitLab : https://gitlab.com/chakrahossam-group/prioritest
 
-**Pour ajouter les membres de l'équipe :**
+### ⚠️ IMPORTANT : Créer un Compte GitLab
+
+**Tous les membres de l'équipe doivent avoir un compte GitLab avant d'être ajoutés au projet.**
+
+**Pour créer un compte GitLab :**
+
+1. Allez sur : https://gitlab.com/users/sign_up
+2. Créez un compte avec l'email de l'équipe :
+   - `haytamnajam14@gmail.com` (Haytam Ta)
+   - `kaouhicham@gmail.com` (Hicham Kaou)
+   - `hchakra8@gmail.com` (Hossam Chakra)
+   - `im.michich@gmail.com` (Ilyas Michich)
+   - `oussamaboujdig8@gmail.com` (Oussama Boujdig)
+3. Vérifiez votre email
+4. **Une fois le compte créé**, informez l'admin du projet (Hossam Chakra)
+
+### Ajouter les Membres au Projet (Admin)
+
+**Une fois que tous les membres ont créé leur compte GitLab :**
 
 1. Allez sur https://gitlab.com/chakrahossam-group/prioritest
 2. Cliquez sur **Settings** → **Members** (ou **Paramètres** → **Membres**)
@@ -20,6 +38,8 @@ Le repository principal est sur GitLab : https://gitlab.com/chakrahossam-group/p
 5. Sélectionnez le rôle **Developer** ou **Maintainer**
 6. Envoyez l'invitation
 
+**Les membres recevront un email d'invitation et devront l'accepter.**
+
 ### Authentification GitLab
 
 Si votre compte utilise SSO/SAML, vous devez créer un **Personal Access Token**.
@@ -28,6 +48,12 @@ Si votre compte utilise SSO/SAML, vous devez créer un **Personal Access Token**
 
 ## 🚀 Configuration Initiale pour les Membres
 
+### Prérequis
+
+- ✅ Compte GitLab créé et vérifié
+- ✅ Invitation au projet acceptée (vérifiez vos emails)
+- ✅ Git installé sur votre machine
+
 ### 1. Cloner le Repository
 
 ```bash
@@ -35,6 +61,8 @@ Si votre compte utilise SSO/SAML, vous devez créer un **Personal Access Token**
 git clone https://gitlab.com/chakrahossam-group/prioritest.git
 cd prioritest
 ```
+
+**Note** : Si votre compte GitLab utilise SSO/SAML, vous devrez créer un Personal Access Token. Voir `docs/GITLAB_AUTH.md`
 
 ### 2. Configurer Git (si pas déjà fait)
 
