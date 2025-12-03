@@ -57,6 +57,7 @@ docker-compose up -d
 ## 📚 Documentation
 
 - `STRUCTURE_PROJET.md` : Structure détaillée du projet
+- `docs/SETUP_TEAM.md` : Guide d'onboarding pour les membres de l'équipe
 
 ## 🔗 Liens
 
