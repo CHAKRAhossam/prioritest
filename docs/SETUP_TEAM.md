@@ -20,11 +20,11 @@ Le repository principal est sur GitLab : https://gitlab.com/chakrahossam-group/p
 5. Sélectionnez le rôle **Developer** ou **Maintainer**
 6. Envoyez l'invitation
 
-### GitHub (Repository Personnel - Optionnel)
+### Authentification GitLab
 
-Le repository GitHub est personnel : https://github.com/CHAKRAhossam/prioritest
+Si votre compte utilise SSO/SAML, vous devez créer un **Personal Access Token**.
 
-Les membres peuvent forker ce repo s'ils le souhaitent, mais le travail principal se fait sur GitLab.
+📖 **Voir le guide** : `docs/GITLAB_AUTH.md`
 
 ## 🚀 Configuration Initiale pour les Membres
 
