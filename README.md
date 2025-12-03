@@ -58,7 +58,7 @@ docker-compose up -d
 
 - `STRUCTURE_PROJET.md` : Structure détaillée du projet
 - `docs/SETUP_TEAM.md` : Guide d'onboarding pour les membres de l'équipe
-- `docs/GITLAB_AUTH.md` : Guide d'authentification GitLab (Personal Access Token)
+- `docs/GITLAB_AUTH.md` : Guide d'authentification GitLab (Personal Access Token pour SSO/SAML)
 
 ## 🔗 Liens
 

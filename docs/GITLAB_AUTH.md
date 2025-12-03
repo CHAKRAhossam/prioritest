@@ -42,7 +42,7 @@ Si votre compte GitLab utilise SSO/SAML, vous ne pouvez pas utiliser un mot de p
 
 4. Windows sauvegardera automatiquement ces credentials.
 
-📖 **Guide détaillé** : Voir `docs/HOW_TO_USE_TOKEN.md`
+**Note** : Si vous préférez ajouter les credentials manuellement dans Windows Credential Manager, allez dans **Paramètres Windows** → **Comptes** → **Gestionnaire d'informations d'identification** et ajoutez/modifiez l'entrée `git:https://gitlab.com`.
 
 ### Alternative : SSH
 
