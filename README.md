@@ -56,9 +56,10 @@ docker-compose up -d
 
 ## 📚 Documentation
 
-- `STRUCTURE_PROJET.md` : Structure détaillée du projet
-- `docs/SETUP_TEAM.md` : Guide d'onboarding pour les membres de l'équipe
+- `docs/QUICK_START.md` : Guide de démarrage rapide pour l'équipe
+- `docs/SETUP_TEAM.md` : Guide complet d'onboarding pour les membres de l'équipe
 - `docs/GITLAB_AUTH.md` : Guide d'authentification GitLab (Personal Access Token pour SSO/SAML)
+- `STRUCTURE_PROJET.md` : Structure détaillée du projet
 
 ## 🔗 Liens
 
