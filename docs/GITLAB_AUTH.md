@@ -24,12 +24,25 @@ Si votre compte GitLab utilise SSO/SAML, vous ne pouvez pas utiliser un mot de p
 
 ### Utiliser le Token
 
-Quand Git vous demande les credentials lors d'un `git push` ou `git pull` :
+**Méthode Recommandée : Git Credential Manager**
 
-- **Username** : Votre username GitLab (pas votre email)
-- **Password** : Collez votre **Personal Access Token** (pas votre mot de passe GitLab)
+1. Assurez-vous que Git Credential Manager est activé :
+   ```bash
+   git config --global credential.helper manager
+   ```
 
-Windows sauvegardera automatiquement ces credentials.
+2. Poussez vers GitLab :
+   ```bash
+   git push origin main
+   ```
+
+3. Quand Git vous demande les credentials :
+   - **Username** : Votre username GitLab (pas votre email)
+   - **Password** : Collez votre **Personal Access Token** (pas votre mot de passe GitLab)
+
+4. Windows sauvegardera automatiquement ces credentials.
+
+📖 **Guide détaillé** : Voir `docs/HOW_TO_USE_TOKEN.md`
 
 ### Alternative : SSH
 
