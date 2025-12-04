@@ -7,6 +7,8 @@
 
 Ingestion des dépôts (Git/GitHub/GitLab), issues/bugs (Jira/GitHub Issues), artefacts CI (rapports tests/couverture).
 
+
+
 ## Technologies
 
 - JGit (Java) pour Git
