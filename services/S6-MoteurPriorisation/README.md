@@ -90,6 +90,34 @@ pytest tests/
 pytest tests/ --cov=src --cov-report=html
 ```
 
+## Docker
+
+### Construction et lancement
+
+```bash
+# Construire l'image
+docker build -t s6-moteur-priorisation:latest .
+
+# Lancer avec docker-compose (recommandé)
+docker-compose up -d
+
+# Ou lancer directement
+docker run -d -p 8006:8006 --name s6-moteur-priorisation s6-moteur-priorisation:latest
+```
+
+### Tests Docker
+
+```bash
+# Windows PowerShell
+.\docker-test.ps1
+
+# Linux/Mac
+chmod +x docker-test.sh
+./docker-test.sh
+```
+
+Voir `DOCKER_GUIDE.md` pour plus de détails.
+
 ## Configuration
 
 Voir `.env.example` pour les variables d'environnement nécessaires.
