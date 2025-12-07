@@ -2,7 +2,7 @@
 Modèles de base de données pour le stockage des politiques et plans
 """
 from sqlalchemy import Column, String, Float, Integer, DateTime, JSON, Text, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
