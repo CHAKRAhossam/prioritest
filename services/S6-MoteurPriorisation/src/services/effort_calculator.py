@@ -208,3 +208,4 @@ class EffortCalculator:
         if max_effort_hours is not None:
             self.max_effort_hours = max_effort_hours
 
+

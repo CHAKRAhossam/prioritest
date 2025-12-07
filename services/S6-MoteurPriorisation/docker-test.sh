@@ -75,3 +75,4 @@ echo -e "${GREEN}✅ Conteneur arrêté et supprimé${NC}"
 echo -e "\n${GREEN}✅ Tous les tests Docker sont passés !${NC}"
 echo "Pour démarrer le service : docker-compose up -d"
 
+

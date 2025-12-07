@@ -15,3 +15,4 @@ def test_health_check():
     assert data["status"] == "healthy"
     assert data["service"] == "MoteurPriorisation"
 
+
