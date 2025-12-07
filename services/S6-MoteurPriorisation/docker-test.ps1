@@ -84,3 +84,4 @@ Write-Host "✅ Conteneur arrêté et supprimé" -ForegroundColor Green
 Write-Host "`n✅ Tous les tests Docker sont passés !" -ForegroundColor Green
 Write-Host "Pour démarrer le service : docker-compose up -d" -ForegroundColor Cyan
 
+

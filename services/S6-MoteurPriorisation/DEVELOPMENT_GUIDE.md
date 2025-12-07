@@ -242,3 +242,4 @@ uvicorn src.main:app --reload --port 8006
 # http://localhost:8006/docs
 ```
 
+

@@ -157,3 +157,4 @@ class TestEffortCalculator:
         # 200 / 100 = 2h, avec multiplicateur complexité
         assert effort > 2.0
 
+
