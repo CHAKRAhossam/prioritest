@@ -12,6 +12,7 @@ from src.services.effort_calculator import EffortCalculator
 from src.services.criticality_service import CriticalityService
 from src.services.prioritization_strategies import PrioritizationStrategies
 from src.services.ml_service_client import MLServiceClient
+from src.services.metrics_service import MetricsService
 from typing import Optional, List
 
 router = APIRouter()
@@ -21,6 +22,7 @@ effort_calculator = EffortCalculator()
 criticality_service = CriticalityService()
 strategies = PrioritizationStrategies()
 ml_client = MLServiceClient()
+metrics_service = MetricsService()
 
 @router.post(
     "/prioritize",
@@ -135,11 +137,27 @@ async def prioritize(
         
         estimated_coverage_gain = total_risk / total_risk_all if total_risk_all > 0 else 0.0
         
+        # Calculer les métriques de performance
+        # Convertir PrioritizedClass en dict pour le service de métriques
+        classes_for_metrics = [
+            {
+                'class_name': c.class_name,
+                'risk_score': c.risk_score,
+                'effort_hours': c.effort_hours,
+                'effort_aware_score': c.effort_aware_score
+            }
+            for c in prioritized_plan
+        ]
+        
+        # Calculer Popt@20 et Recall@Top20
+        popt20_score = metrics_service.calculate_popt20(classes_for_metrics)
+        recall_top20 = metrics_service.calculate_recall_top20(classes_for_metrics)
+        
         metrics = PrioritizationMetrics(
             total_effort_hours=total_effort,
             estimated_coverage_gain=round(estimated_coverage_gain, 4),
-            popt20_score=None,  # TODO: Calculer avec données réelles
-            recall_top20=None  # TODO: Calculer avec données réelles
+            popt20_score=popt20_score,
+            recall_top20=recall_top20
         )
         
         return PrioritizationResponse(
