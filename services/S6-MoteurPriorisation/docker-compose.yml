@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  moteur-priorisation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: s6-moteur-priorisation
+    ports:
+      - "8006:8006"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8006
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8006 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL pour stockage des politiques (optionnel pour développement)
+  postgres:
+    image: postgres:15-alpine
+    container_name: s6-postgres
+    environment:
+      - POSTGRES_USER=prioritest
+      - POSTGRES_PASSWORD=prioritest
+      - POSTGRES_DB=prioritest
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prioritest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
