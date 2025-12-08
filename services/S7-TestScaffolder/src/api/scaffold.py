@@ -8,14 +8,17 @@ from src.services.ast_analyzer import ASTAnalyzer
 from src.services.test_generator import TestGenerator
 from src.services.test_suggestions import TestSuggestionsService
 from src.services.mock_generator import MockGenerator
+from src.services.mutation_checklist import MutationChecklistService
 from src.models.ast_models import ClassAnalysis
 from src.models.test_suggestions import ClassSuggestions
+from src.models.mutation_checklist import ClassMutationChecklist
 
 router = APIRouter()
 ast_analyzer = ASTAnalyzer()
 test_generator = TestGenerator()
 suggestions_service = TestSuggestionsService()
 mock_generator = MockGenerator()
+mutation_checklist_service = MutationChecklistService()
 
 
 class AnalyzeClassRequest(BaseModel):
@@ -252,5 +255,77 @@ def suggest_test_cases(request: SuggestTestCasesRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Erreur lors de la génération des suggestions: {str(e)}"
+        )
+
+
+class MutationChecklistRequest(BaseModel):
+    """Requête pour obtenir une checklist de mutation testing"""
+    java_code: str = Field(..., description="Code source Java de la classe", example="package com.example; public class UserService {}")
+    include_private: bool = Field(False, description="Inclure les méthodes privées", example=False)
+    file_path: Optional[str] = Field(None, description="Chemin du fichier (optionnel)", example="src/main/java/com/example/UserService.java")
+
+
+@router.post(
+    "/mutation-checklist",
+    response_model=ClassMutationChecklist,
+    summary="Générer checklist de mutation testing",
+    description="""
+    Génère une checklist de mutation testing pour une classe Java.
+    
+    **Types de mutations couvertes :**
+    - **ReturnValsMutator** : Tests pour valeurs de retour null
+    - **ConditionalsBoundaryMutator** : Tests pour limites conditionnelles
+    - **MathMutator** : Tests pour opérateurs mathématiques
+    - **NegateConditionalsMutator** : Tests pour négation de conditions
+    - **VoidMethodCallsMutator** : Tests pour effets de bord
+    - **RemoveConditionalsMutator** : Tests pour tous les chemins d'exécution
+    
+    **Utilisation :**
+    Envoyez le code source Java de la classe.
+    Le service génère une checklist avec des suggestions de tests
+    pour détecter les mutations courantes (basé sur PIT/Pitest).
+    """,
+    response_description="Checklist complète de mutation testing"
+)
+def generate_mutation_checklist(request: MutationChecklistRequest):
+    """
+    Génère une checklist de mutation testing pour une classe Java.
+    
+    Args:
+        request: Requête contenant le code Java et les options
+    
+    Returns:
+        Checklist complète de mutation testing
+    """
+    try:
+        # Étape 1: Analyser la classe
+        analysis_result = ast_analyzer.analyze_class(
+            java_code=request.java_code,
+            file_path=request.file_path
+        )
+        
+        if not analysis_result:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible d'analyser la classe Java"
+            )
+        
+        # Convertir en ClassAnalysis
+        analysis = ClassAnalysis(**analysis_result)
+        
+        # Étape 2: Générer la checklist
+        checklist = mutation_checklist_service.generate_checklist(
+            class_analysis=analysis,
+            include_private=request.include_private
+        )
+        
+        return checklist
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la génération de la checklist: {str(e)}"
         )
 
