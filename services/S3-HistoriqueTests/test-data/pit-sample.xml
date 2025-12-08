@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mutations>
+  <mutation detected="true" status="KILLED">
+    <sourceFile>UserService.java</sourceFile>
+    <mutatedClass>com.example.service.UserService</mutatedClass>
+    <mutatedMethod>createUser</mutatedMethod>
+    <methodDescription>(Lcom/example/model/User;)V</methodDescription>
+    <lineNumber>23</lineNumber>
+    <mutator>org.pitest.mutationtest.engine.gregor.mutators.ReturnValsMutator</mutator>
+    <indexes>
+      <index>45</index>
+    </indexes>
+    <blocks>
+      <block>1</block>
+    </blocks>
+    <killingTest>com.example.service.UserServiceTest.testCreateUser</killingTest>
+    <description>replaced return value with null</description>
+  </mutation>
+  <mutation detected="false" status="SURVIVED">
+    <sourceFile>UserService.java</sourceFile>
+    <mutatedClass>com.example.service.UserService</mutatedClass>
+    <mutatedMethod>updateUser</mutatedMethod>
+    <methodDescription>(Lcom/example/model/User;)V</methodDescription>
+    <lineNumber>34</lineNumber>
+    <mutator>org.pitest.mutationtest.engine.gregor.mutators.ConditionalsBoundaryMutator</mutator>
+    <indexes>
+      <index>67</index>
+    </indexes>
+    <blocks>
+      <block>2</block>
+    </blocks>
+    <description>changed conditional boundary</description>
+  </mutation>
+  <mutation detected="true" status="KILLED">
+    <sourceFile>ProductService.java</sourceFile>
+    <mutatedClass>com.example.service.ProductService</mutatedClass>
+    <mutatedMethod>calculatePrice</mutatedMethod>
+    <methodDescription>()D</methodDescription>
+    <lineNumber>56</lineNumber>
+    <mutator>org.pitest.mutationtest.engine.gregor.mutators.MathMutator</mutator>
+    <indexes>
+      <index>89</index>
+    </indexes>
+    <blocks>
+      <block>3</block>
+    </blocks>
+    <killingTest>com.example.service.ProductServiceTest.testCalculatePrice</killingTest>
+    <description>replaced multiplication with division</description>
+  </mutation>
+</mutations>
+
