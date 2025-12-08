@@ -5,8 +5,9 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 
 # AST Analysis Java
-tree-sitter==0.20.4
-tree-sitter-java==0.20.0
+# Note: tree-sitter-java nécessite une compilation manuelle
+# Pour l'instant, on utilise un parser basique avec regex
+# tree-sitter==0.20.4  # Décommenter si tree-sitter-java est configuré
 
 # Templates
 jinja2==3.1.2
