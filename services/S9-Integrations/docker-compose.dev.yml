@@ -1,0 +1,73 @@
+version: '3.8'
+
+# Docker Compose pour le développement local
+# Lance uniquement PostgreSQL et Redis pour permettre le développement avec l'IDE
+# Usage: docker-compose -f docker-compose.dev.yml up -d
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: cicd-postgres-dev
+    environment:
+      - POSTGRES_DB=cicd_integration
+      - POSTGRES_USER=cicd
+      - POSTGRES_PASSWORD=cicd_secret
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - cicd-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cicd -d cicd_integration"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: cicd-redis-dev
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_dev_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - cicd-dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin pour gérer PostgreSQL (optionnel)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cicd-pgadmin-dev
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_dev_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    networks:
+      - cicd-dev-network
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+networks:
+  cicd-dev-network:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  pgadmin_dev_data:
+

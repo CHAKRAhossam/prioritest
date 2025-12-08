@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cicd-integration-config
+  namespace: test-prioritization
+  labels:
+    app: cicd-integration-service
+data:
+  db.host: "postgres.test-prioritization.svc.cluster.local"
+  db.port: "5432"
+  db.name: "cicd_integration"
+  redis.host: "redis.test-prioritization.svc.cluster.local"
+  redis.port: "6379"
+  keycloak.server-url: "http://keycloak.test-prioritization.svc.cluster.local:8080"
+  keycloak.realm: "cicd-integration"
+  keycloak.client-id: "cicd-service"
+  keycloak.issuer-uri: "http://keycloak.test-prioritization.svc.cluster.local:8080/realms/cicd-integration"
+  keycloak.jwk-uri: "http://keycloak.test-prioritization.svc.cluster.local:8080/realms/cicd-integration/protocol/openid-connect/certs"
+  otel.endpoint: "http://otel-collector.test-prioritization.svc.cluster.local:4317"
+  training.service-url: "http://training-service.test-prioritization.svc.cluster.local:8001"
+  prioritization.service-url: "http://prioritization-service.test-prioritization.svc.cluster.local:8002"
+
