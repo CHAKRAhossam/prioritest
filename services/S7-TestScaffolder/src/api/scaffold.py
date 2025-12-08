@@ -13,6 +13,7 @@ from src.services.git_storage import GitStorageService
 from src.models.ast_models import ClassAnalysis
 from src.models.test_suggestions import ClassSuggestions
 from src.models.mutation_checklist import ClassMutationChecklist
+from src.models.generation import CompleteGenerationRequest, CompleteGenerationResponse
 from datetime import datetime
 import os
 
@@ -483,5 +484,182 @@ def save_suggestions(request: SaveSuggestionsRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Erreur lors de la sauvegarde: {str(e)}"
+        )
+
+
+@router.post(
+    "/generate-complete",
+    response_model=CompleteGenerationResponse,
+    summary="Génération complète de tests (workflow intégré)",
+    description="""
+    Endpoint complet qui exécute tout le workflow de génération de tests en une seule requête.
+    
+    **Workflow complet :**
+    1. **Analyse AST** : Analyse la classe Java et extrait toutes les informations
+    2. **Génération de test** : Génère une classe de test JUnit complète avec Mockito
+    3. **Suggestions** : Génère des suggestions de cas de test (équivalence, limites, exceptions, etc.)
+    4. **Checklist mutation** : Génère une checklist de mutation testing
+    5. **Stockage Git** (optionnel) : Sauvegarde les tests et suggestions dans un dépôt Git
+    
+    **Avantages :**
+    - Un seul appel API pour tout le processus
+    - Cohérence entre tous les résultats
+    - Option de sauvegarde automatique dans Git
+    - Retourne un résumé complet avec toutes les informations
+    
+    **Utilisation :**
+    Envoyez le code source Java de la classe.
+    Le service génère automatiquement tout ce qui est nécessaire pour tester la classe.
+    """,
+    response_description="Résultat complet de la génération avec test, suggestions et checklist"
+)
+def generate_complete(request: CompleteGenerationRequest):
+    """
+    Génère complètement les tests pour une classe Java.
+    
+    Exécute tout le workflow :
+    - Analyse AST
+    - Génération de test JUnit
+    - Suggestions de cas de test
+    - Checklist mutation testing
+    - Stockage Git (optionnel)
+    
+    Args:
+        request: Requête contenant le code Java et toutes les options
+    
+    Returns:
+        Résultat complet avec test, suggestions, checklist et stockage
+    """
+    try:
+        # Étape 1: Analyser la classe
+        analysis_result = ast_analyzer.analyze_class(
+            java_code=request.java_code,
+            file_path=request.file_path
+        )
+        
+        if not analysis_result:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible d'analyser la classe Java"
+            )
+        
+        analysis = ClassAnalysis(**analysis_result)
+        
+        # Étape 2: Générer le test JUnit
+        test_code = test_generator.generate_test_class(
+            class_analysis=analysis,
+            test_package=request.test_package,
+            test_class_suffix=request.test_class_suffix
+        )
+        
+        # Déterminer le package de test
+        if request.test_package:
+            test_package = request.test_package
+        elif analysis.package_name:
+            test_package = analysis.package_name + ".test"
+        else:
+            test_package = "test"
+        
+        test_class_name = f"{analysis.class_name}{request.test_class_suffix}"
+        
+        # Étape 3: Générer les suggestions (si demandé)
+        suggestions = None
+        if request.include_suggestions:
+            try:
+                suggestions = suggestions_service.generate_suggestions(
+                    class_analysis=analysis,
+                    include_private=request.include_private
+                )
+            except Exception as e:
+                print(f"Erreur lors de la génération des suggestions: {e}")
+        
+        # Étape 4: Générer la checklist mutation (si demandé)
+        mutation_checklist = None
+        if request.include_mutation_checklist:
+            try:
+                mutation_checklist = mutation_checklist_service.generate_checklist(
+                    class_analysis=analysis,
+                    include_private=request.include_private
+                )
+            except Exception as e:
+                print(f"Erreur lors de la génération de la checklist: {e}")
+        
+        # Étape 5: Sauvegarder dans Git (si demandé)
+        git_storage_info = None
+        if request.save_to_git:
+            try:
+                # Sauvegarder le fichier de test
+                test_commit = git_storage.save_test_file(
+                    test_code=test_code,
+                    class_name=analysis.class_name,
+                    test_class_name=test_class_name,
+                    test_package=test_package,
+                    branch=request.git_branch,
+                    commit_message=request.git_commit_message or f"feat(test): Ajouter tests générés pour {analysis.class_name}"
+                )
+                
+                # Sauvegarder les suggestions si disponibles
+                suggestions_commit = None
+                if suggestions or mutation_checklist:
+                    suggestions_data = {
+                        'class_name': analysis.class_name,
+                        'generated_at': datetime.now().isoformat()
+                    }
+                    if suggestions:
+                        suggestions_data['suggestions'] = suggestions.dict()
+                    if mutation_checklist:
+                        suggestions_data['mutation_checklist'] = mutation_checklist.dict()
+                    
+                    suggestions_commit = git_storage.save_suggestions_file(
+                        suggestions=suggestions_data,
+                        class_name=analysis.class_name,
+                        branch=request.git_branch,
+                        commit_message=f"docs(test): Ajouter suggestions de tests pour {analysis.class_name}"
+                    )
+                
+                git_storage_info = {
+                    'test_file_commit': test_commit,
+                    'suggestions_file_commit': suggestions_commit,
+                    'branch': request.git_branch or git_storage.repo.active_branch.name if git_storage.repo else None
+                }
+                
+                # Pousser si demandé
+                if request.git_push:
+                    git_storage.push_changes(branch=request.git_branch)
+                    git_storage_info['pushed'] = True
+                
+            except Exception as e:
+                print(f"Erreur lors de la sauvegarde Git: {e}")
+                git_storage_info = {'error': str(e)}
+        
+        # Construire le résumé
+        summary = {
+            'class_name': analysis.class_name,
+            'methods_count': len(analysis.methods),
+            'public_methods_count': sum(1 for m in analysis.methods if m.is_public),
+            'test_generated': True,
+            'suggestions_count': suggestions.total_suggestions if suggestions else 0,
+            'mutation_items_count': mutation_checklist.total_items if mutation_checklist else 0,
+            'saved_to_git': request.save_to_git and git_storage_info is not None
+        }
+        
+        return CompleteGenerationResponse(
+            success=True,
+            analysis=analysis,
+            test_code=test_code,
+            test_class_name=test_class_name,
+            test_package=test_package,
+            suggestions=suggestions,
+            mutation_checklist=mutation_checklist,
+            git_storage=git_storage_info,
+            summary=summary
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la génération complète: {str(e)}"
         )
 
