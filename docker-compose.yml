@@ -81,6 +81,74 @@ services:
       - postgres
       - minio
 
+  # Service S1 - CollecteDepots
+  collecte-depots:
+    build:
+      context: ./services/S1-CollecteDepots
+      dockerfile: Dockerfile
+    container_name: prioritest-collecte-depots
+    ports:
+      - "8001:8001"
+    environment:
+      # Application
+      APP_NAME: CollecteDepots
+      LOG_LEVEL: INFO
+      ENVIRONMENT: production
+      # Server
+      HOST: 0.0.0.0
+      PORT: 8001
+      # GitHub (optional - configure with tokens)
+      # GITHUB_TOKEN: ${GITHUB_TOKEN}
+      # GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      # GitLab (optional - configure with tokens)
+      # GITLAB_TOKEN: ${GITLAB_TOKEN}
+      # GITLAB_URL: https://gitlab.com
+      # GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET}
+      # Jira (optional - configure with credentials)
+      # JIRA_URL: ${JIRA_URL}
+      # JIRA_EMAIL: ${JIRA_EMAIL}
+      # JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_COMMITS: repository.commits
+      KAFKA_TOPIC_ISSUES: repository.issues
+      KAFKA_TOPIC_ARTIFACTS: ci.artifacts
+      # Database
+      DATABASE_URL: postgresql://prioritest:prioritest@postgres:5432/prioritest
+      DB_POOL_SIZE: 10
+      DB_MAX_OVERFLOW: 20
+      # MinIO
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_SECURE: "false"
+      MINIO_BUCKET_ARTIFACTS: ci-artifacts
+      MINIO_BUCKET_REPOS: repository-snapshots
+      # DVC
+      ENABLE_DVC: "true"
+      DVC_S3_ENDPOINT_URL: http://minio:9000
+      DVC_S3_ACCESS_KEY_ID: minioadmin
+      DVC_S3_SECRET_ACCESS_KEY: minioadmin
+      DVC_DATA_DIR: /app/data
+      # Git operations
+      GIT_TEMP_DIR: /app/temp-repos
+      GIT_CLONE_TIMEOUT: 300
+      # Feature flags
+      ENABLE_TIMESCALE: "true"
+    volumes:
+      - collecte_depots_temp:/app/temp-repos
+      - collecte_depots_data:/app/data
+    depends_on:
+      - kafka
+      - postgres
+      - minio
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   # Service S2 - AnalyseStatique
   analyse-statique:
     build:
@@ -118,6 +186,8 @@ volumes:
   postgres_data:
   minio_data:
   analyse_statique_temp:
+  collecte_depots_temp:
+  collecte_depots_data:
 
 networks:
   default:
