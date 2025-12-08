@@ -6,11 +6,14 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from src.services.ast_analyzer import ASTAnalyzer
 from src.services.test_generator import TestGenerator
+from src.services.test_suggestions import TestSuggestionsService
 from src.models.ast_models import ClassAnalysis
+from src.models.test_suggestions import ClassSuggestions
 
 router = APIRouter()
 ast_analyzer = ASTAnalyzer()
 test_generator = TestGenerator()
+suggestions_service = TestSuggestionsService()
 
 
 class AnalyzeClassRequest(BaseModel):
@@ -176,5 +179,76 @@ def generate_test(request: GenerateTestRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Erreur lors de la génération du test: {str(e)}"
+        )
+
+
+class SuggestTestCasesRequest(BaseModel):
+    """Requête pour obtenir des suggestions de cas de test"""
+    java_code: str = Field(..., description="Code source Java de la classe", example="package com.example; public class UserService {}")
+    include_private: bool = Field(False, description="Inclure les méthodes privées", example=False)
+    file_path: Optional[str] = Field(None, description="Chemin du fichier (optionnel)", example="src/main/java/com/example/UserService.java")
+
+
+@router.post(
+    "/suggest-test-cases",
+    response_model=ClassSuggestions,
+    summary="Suggérer des cas de test",
+    description="""
+    Génère des suggestions de cas de test pour une classe Java.
+    
+    **Types de suggestions générées :**
+    - **Équivalence** : Valeurs valides et invalides
+    - **Limites** : Valeurs aux limites (min, max, zéro)
+    - **Exceptions** : Cas qui déclenchent des exceptions
+    - **Null** : Tests avec paramètres null
+    - **Collections** : Tests avec collections vides/pleines
+    
+    **Utilisation :**
+    Envoyez le code source Java de la classe.
+    Le service analyse la classe et génère des suggestions de cas de test
+    avec des exemples de valeurs et des assertions suggérées.
+    """,
+    response_description="Suggestions de cas de test pour la classe"
+)
+def suggest_test_cases(request: SuggestTestCasesRequest):
+    """
+    Génère des suggestions de cas de test pour une classe Java.
+    
+    Args:
+        request: Requête contenant le code Java et les options
+    
+    Returns:
+        Suggestions complètes de cas de test
+    """
+    try:
+        # Étape 1: Analyser la classe
+        analysis_result = ast_analyzer.analyze_class(
+            java_code=request.java_code,
+            file_path=request.file_path
+        )
+        
+        if not analysis_result:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible d'analyser la classe Java"
+            )
+        
+        # Convertir en ClassAnalysis
+        analysis = ClassAnalysis(**analysis_result)
+        
+        # Étape 2: Générer les suggestions
+        suggestions = suggestions_service.generate_suggestions(
+            class_analysis=analysis,
+            include_private=request.include_private
+        )
+        
+        return suggestions
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la génération des suggestions: {str(e)}"
         )
 
