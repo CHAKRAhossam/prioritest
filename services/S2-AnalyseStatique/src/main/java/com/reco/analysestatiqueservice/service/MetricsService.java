@@ -1,7 +1,6 @@
 package com.reco.analysestatiqueservice.service;
 
-import com.reco.analysestatiqueservice.dto.FileScanResult;
-import com.reco.analysestatiqueservice.dto.MetricsResponse;
+import com.reco.analysestatiqueservice.dto.*;
 import com.reco.analysestatiqueservice.extractor.*;
 import com.reco.analysestatiqueservice.model.ClassMetrics;
 import com.reco.analysestatiqueservice.model.DependencyEdge;
@@ -15,10 +14,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Service responsible for analyzing Java projects and extracting code metrics.
@@ -37,6 +34,10 @@ public class MetricsService {
     private final DependencyGraphExtractor dependencyGraphExtractor;
     private final SmellDetector smellDetector;
     private final PMDSmellDetectorCli pmdSmellDetectorCli;
+    private final GitService gitService;
+    private final GlobalMetricsService globalMetricsService;
+    private final KafkaServiceInterface kafkaService;
+    private final FeastServiceInterface feastService;
 
     /**
      * Constructor with dependency injection.
@@ -46,6 +47,10 @@ public class MetricsService {
      * @param ckMetricsExtractor        Extractor for CK metrics
      * @param dependencyGraphExtractor  Extractor for dependency graph
      * @param smellDetector             Detector for code smells
+     * @param gitService                Service for Git operations
+     * @param globalMetricsService      Service for global metrics (NOC, in/out degree)
+     * @param kafkaService              Service for Kafka publishing
+     * @param feastService              Service for Feast publishing
      */
     public MetricsService(
             ZipExtractor zipExtractor,
@@ -53,13 +58,21 @@ public class MetricsService {
             CKMetricsExtractor ckMetricsExtractor,
             DependencyGraphExtractor dependencyGraphExtractor,
             SmellDetector smellDetector,
-            PMDSmellDetectorCli pmdSmellDetectorCli) {
+            PMDSmellDetectorCli pmdSmellDetectorCli,
+            GitService gitService,
+            GlobalMetricsService globalMetricsService,
+            KafkaServiceInterface kafkaService,
+            FeastServiceInterface feastService) {
         this.zipExtractor = zipExtractor;
         this.javaParserExtractor = javaParserExtractor;
         this.ckMetricsExtractor = ckMetricsExtractor;
         this.dependencyGraphExtractor = dependencyGraphExtractor;
         this.smellDetector = smellDetector;
         this.pmdSmellDetectorCli = pmdSmellDetectorCli;
+        this.gitService = gitService;
+        this.globalMetricsService = globalMetricsService;
+        this.kafkaService = kafkaService;
+        this.feastService = feastService;
     }
 
     /**
@@ -199,5 +212,168 @@ public class MetricsService {
         } catch (IOException e) {
             logger.error("Error cleaning up temporary directory: {}", tempDir, e);
         }
+    }
+    
+    /**
+     * Processes a commit event from Kafka.
+     * Clones the repository, analyzes changed files, and publishes metrics.
+     *
+     * @param event The commit event from Kafka
+     */
+    public void processCommitEvent(CommitEvent event) {
+        logger.info("Processing commit event: {} for repository: {} at commit: {}", 
+                event.getEventId(), event.getRepositoryId(), event.getCommitSha());
+        
+        File repoDir = null;
+        try {
+            // TODO: Get repository URL from repository_id (would need a repository service)
+            // For now, we'll assume the repository URL is provided or stored
+            String repositoryUrl = "https://github.com/" + event.getRepositoryId() + ".git";
+            
+            // Clone repository and checkout commit
+            repoDir = gitService.cloneAndCheckout(repositoryUrl, event.getCommitSha());
+            
+            // Analyze changed files
+            List<FileScanResult> filesToAnalyze = new ArrayList<>();
+            for (CommitEvent.FileChanged fileChanged : event.getFilesChanged()) {
+                if ("deleted".equals(fileChanged.getStatus())) {
+                    continue; // Skip deleted files
+                }
+                
+                File file = new File(repoDir, fileChanged.getPath());
+                if (file.exists() && fileChanged.getPath().endsWith(".java")) {
+                    filesToAnalyze.add(new FileScanResult(fileChanged.getPath(), file.getAbsolutePath()));
+                }
+            }
+            
+            if (filesToAnalyze.isEmpty()) {
+                logger.warn("No Java files to analyze in commit event: {}", event.getEventId());
+                return;
+            }
+            
+            // Extract metrics for all files first
+            List<ClassMetrics> allMetrics = new ArrayList<>();
+            Map<String, List<DependencyEdge>> allDependencies = new HashMap<>();
+            Map<String, List<SmellResult>> allSmells = new HashMap<>();
+            
+            for (FileScanResult fs : filesToAnalyze) {
+                File javaFile = new File(fs.getPath());
+                try {
+                    ClassMetrics cm = ckMetricsExtractor.extract(javaFile);
+                    if (cm != null) {
+                        allMetrics.add(cm);
+                        allDependencies.put(cm.getClassName(), dependencyGraphExtractor.extract(javaFile));
+                        allSmells.put(cm.getClassName(), new ArrayList<>());
+                        allSmells.get(cm.getClassName()).addAll(smellDetector.detect(javaFile));
+                        allSmells.get(cm.getClassName()).addAll(pmdSmellDetectorCli.detect(javaFile));
+                    }
+                } catch (Exception e) {
+                    logger.error("Error analyzing file: {}", javaFile.getAbsolutePath(), e);
+                }
+            }
+            
+            // Calculate global metrics (NOC, in/out degree)
+            Map<String, Integer> nocMap = globalMetricsService.calculateNOC(repoDir, allMetrics);
+            Map<String, GlobalMetricsService.DependencyDegrees> degreesMap = 
+                    globalMetricsService.calculateDependencyDegrees(repoDir, allMetrics);
+            
+            // Update metrics with global values
+            for (ClassMetrics cm : allMetrics) {
+                String fqn = getFullyQualifiedName(cm);
+                cm.setNoc(nocMap.getOrDefault(fqn, 0));
+                
+                GlobalMetricsService.DependencyDegrees degrees = degreesMap.get(fqn);
+                if (degrees != null) {
+                    cm.setDependenciesIn(Collections.singletonList(String.valueOf(degrees.getInDegree())));
+                    cm.setDependenciesOut(allDependencies.getOrDefault(cm.getClassName(), Collections.emptyList())
+                            .stream().map(DependencyEdge::getToClass).collect(Collectors.toList()));
+                }
+            }
+            
+            // Publish metrics for each class
+            for (ClassMetrics cm : allMetrics) {
+                CodeMetricsEvent codeMetricsEvent = buildCodeMetricsEvent(event, cm, allSmells.get(cm.getClassName()));
+                kafkaService.publishCodeMetrics(codeMetricsEvent);
+                feastService.publishToFeast(codeMetricsEvent);
+            }
+            
+            logger.info("Processed {} classes from commit event: {}", allMetrics.size(), event.getEventId());
+            
+        } catch (Exception e) {
+            logger.error("Error processing commit event: {}", event.getEventId(), e);
+        } finally {
+            // Cleanup repository directory (optional - could keep for caching)
+            // gitService.cleanup(repoDir);
+        }
+    }
+    
+    /**
+     * Builds CodeMetricsEvent from ClassMetrics.
+     */
+    private CodeMetricsEvent buildCodeMetricsEvent(
+            CommitEvent commitEvent, 
+            ClassMetrics classMetrics, 
+            List<SmellResult> smells) {
+        
+        CodeMetricsEvent event = new CodeMetricsEvent();
+        event.setEventId(commitEvent.getEventId());
+        event.setRepositoryId(commitEvent.getRepositoryId());
+        event.setCommitSha(commitEvent.getCommitSha());
+        event.setClassName(classMetrics.getClassName());
+        event.setFilePath(classMetrics.getFilePath());
+        
+        CodeMetricsEvent.Metrics metrics = new CodeMetricsEvent.Metrics();
+        metrics.setLoc(classMetrics.getLoc());
+        metrics.setCyclomaticComplexity(classMetrics.getWmc()); // WMC approximates cyclomatic complexity
+        
+        CodeMetricsEvent.CKMetrics ckMetrics = new CodeMetricsEvent.CKMetrics();
+        ckMetrics.setWmc(classMetrics.getWmc());
+        ckMetrics.setDit(classMetrics.getDit());
+        ckMetrics.setNoc(classMetrics.getNoc());
+        ckMetrics.setCbo(classMetrics.getCbo());
+        ckMetrics.setRfc(classMetrics.getRfc());
+        ckMetrics.setLcom(classMetrics.getLcom());
+        metrics.setCkMetrics(ckMetrics);
+        
+        CodeMetricsEvent.Dependencies dependencies = new CodeMetricsEvent.Dependencies();
+        if (classMetrics.getDependenciesIn() != null && !classMetrics.getDependenciesIn().isEmpty()) {
+            dependencies.setInDegree(Integer.parseInt(classMetrics.getDependenciesIn().get(0)));
+        } else {
+            dependencies.setInDegree(0);
+        }
+        dependencies.setOutDegree(classMetrics.getDependenciesOut() != null ? 
+                classMetrics.getDependenciesOut().size() : 0);
+        dependencies.setDependenciesList(classMetrics.getDependenciesOut() != null ? 
+                classMetrics.getDependenciesOut() : Collections.emptyList());
+        metrics.setDependencies(dependencies);
+        
+        List<CodeMetricsEvent.CodeSmell> codeSmells = smells != null ? 
+                smells.stream().map(s -> {
+                    CodeMetricsEvent.CodeSmell smell = new CodeMetricsEvent.CodeSmell();
+                    smell.setType(s.getSmellType());
+                    smell.setSeverity("medium"); // Could be calculated based on metrics
+                    smell.setLine(s.getLine());
+                    return smell;
+                }).collect(Collectors.toList()) : Collections.emptyList();
+        metrics.setCodeSmells(codeSmells);
+        
+        event.setMetrics(metrics);
+        return event;
+    }
+    
+    /**
+     * Gets fully qualified name from ClassMetrics.
+     */
+    private String getFullyQualifiedName(ClassMetrics metrics) {
+        String filePath = metrics.getFilePath();
+        if (filePath.contains("src/main/java/")) {
+            int startIdx = filePath.indexOf("src/main/java/") + "src/main/java/".length();
+            int endIdx = filePath.lastIndexOf("/");
+            if (endIdx > startIdx) {
+                String packagePath = filePath.substring(startIdx, endIdx);
+                return packagePath.replace("/", ".").replace("\\", ".") + "." + metrics.getClassName();
+            }
+        }
+        return metrics.getClassName();
     }
 }
