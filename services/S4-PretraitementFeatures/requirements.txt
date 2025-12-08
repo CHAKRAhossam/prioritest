@@ -1,0 +1,8 @@
+pandas
+numpy
+scikit-learn
+dvc
+imbalanced-learn
+feast
+fastapi
+uvicorn
