@@ -1,0 +1,28 @@
+# FastAPI & Server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# AST Analysis Java
+# Note: tree-sitter-java nécessite une compilation manuelle
+# Pour l'instant, on utilise un parser basique avec regex
+# tree-sitter==0.20.4  # Décommenter si tree-sitter-java est configuré
+
+# Templates
+jinja2==3.1.2
+
+# Git
+gitpython==3.1.40
+
+# HTTP Client
+httpx==0.25.2
+
+# Utilities
+python-dotenv==1.0.0
+python-multipart==0.0.6
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+

@@ -1,0 +1,74 @@
+package {{ test_package }};
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
+{% for import in test_imports %}
+import {{ import }};
+{% endfor %}
+{% if needs_collections %}
+import java.util.Collections;
+{% endif %}
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("Tests pour {{ class_under_test }}")
+class {{ test_class_name }} {
+
+{% for field in mock_fields %}
+    @Mock
+    private {{ field.type }} {{ field.name }};
+{% endfor %}
+
+    @InjectMocks
+    private {{ class_under_test }} {{ class_instance_name }};
+
+    @BeforeEach
+    void setUp() {
+        // Setup initial pour chaque test
+{% for field in mock_fields %}
+        // {{ field.name }} est déjà mocké par @Mock
+{% endfor %}
+    }
+{% if test_methods %}
+
+{% for method in test_methods %}
+    @Test
+    @DisplayName("Test {{ method.display_name }}")
+    void test{{ method.name|title|replace('_', '') }}() {
+        // Arrange
+{% for param in method.parameters %}
+        {{ param.type }} {{ param.name }} = {{ param.default_value }};
+{% endfor %}
+{% if method.return_type and not method.is_void %}
+        {{ method.return_type }} expectedResult = {{ method.return_type_default_value }};
+{% endif %}
+
+        // Act
+{% if method.is_void %}
+        {{ class_instance_name }}.{{ method.name }}({% for param in method.parameters %}{{ param.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% else %}
+        {{ method.return_type }} result = {{ class_instance_name }}.{{ method.name }}({% for param in method.parameters %}{{ param.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% endif %}
+
+        // Assert
+{% if method.is_void %}
+        // Vérifier les effets de bord si nécessaire
+        // TODO: Ajouter des vérifications (verify, assertions, etc.)
+{% else %}
+        assertNotNull(result, "Le résultat ne devrait pas être null");
+        // TODO: Ajouter des assertions spécifiques
+        // assertEquals(expectedResult, result);
+{% endif %}
+    }
+{% endfor %}
+{% else %}
+    // Aucune méthode publique trouvée pour générer des tests
+{% endif %}
+}
+
