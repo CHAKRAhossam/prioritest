@@ -81,9 +81,43 @@ services:
       - postgres
       - minio
 
+  # Service S2 - AnalyseStatique
+  analyse-statique:
+    build:
+      context: ./services/S2-AnalyseStatique
+      dockerfile: Dockerfile
+    container_name: prioritest-analyse-statique
+    ports:
+      - "8081:8081"
+    environment:
+      # Database (optional - uncomment when needed)
+      # SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/prioritest
+      # SPRING_DATASOURCE_USERNAME: prioritest
+      # SPRING_DATASOURCE_PASSWORD: prioritest
+      # Kafka (optional - set to true when needed)
+      KAFKA_ENABLED: "false"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Feast (optional - set to true when needed)
+      FEAST_ENABLED: "false"
+      FEAST_URL: http://localhost:6566
+      # Git temp directory
+      GIT_TEMP_DIR: /app/temp-repos
+    volumes:
+      - analyse_statique_temp:/app/temp-repos
+    depends_on:
+      - kafka
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   postgres_data:
   minio_data:
+  analyse_statique_temp:
 
 networks:
   default:
