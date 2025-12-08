@@ -1,0 +1,268 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: cicd-integration-service
+  
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # Database Configuration - PostgreSQL
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/cicd_integration}
+    username: ${DATABASE_USERNAME:cicd}
+    password: ${DATABASE_PASSWORD:cicd_secret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      leak-detection-threshold: 60000
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: public
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  # Redis Configuration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+
+  # Cache Configuration
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+      cache-null-values: false
+
+  # Security - Keycloak OAuth2
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/cicd-integration}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8180/realms/cicd-integration/protocol/openid-connect/certs}
+      client:
+        registration:
+          keycloak:
+            client-id: ${KEYCLOAK_CLIENT_ID:cicd-service}
+            client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+            authorization-grant-type: client_credentials
+            scope: openid, profile, email
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/cicd-integration}
+            user-name-attribute: preferred_username
+
+# Actuator & Management
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus, loggers
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+# OpenTelemetry Configuration
+otel:
+  service:
+    name: ${spring.application.name}
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+      protocol: grpc
+  traces:
+    exporter: otlp
+  metrics:
+    exporter: otlp
+  logs:
+    exporter: otlp
+
+# Application Custom Configuration
+app:
+  # GitHub Configuration
+  github:
+    app-id: ${GITHUB_APP_ID:}
+    private-key: ${GITHUB_PRIVATE_KEY:}
+    webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    
+  # GitLab Configuration
+  gitlab:
+    token: ${GITLAB_TOKEN:}
+    webhook-secret: ${GITLAB_WEBHOOK_SECRET:}
+    api-base-url: ${GITLAB_API_BASE_URL:https://gitlab.com/api/v4}
+
+  # Risk Analysis Configuration
+  risk:
+    threshold:
+      high: ${RISK_THRESHOLD_HIGH:0.7}
+      medium: ${RISK_THRESHOLD_MEDIUM:0.4}
+    
+  # Policy Gate Configuration
+  policy-gate:
+    enabled: ${POLICY_GATE_ENABLED:true}
+    block-on-high-risk: ${POLICY_GATE_BLOCK:false}
+    require-tests-for-high-risk: ${POLICY_GATE_REQUIRE_TESTS:true}
+
+  # Training Trigger Configuration
+  training:
+    service-url: ${TRAINING_SERVICE_URL:http://training-service:8001}
+    enabled: ${TRAINING_TRIGGER_ENABLED:true}
+    min-commits-threshold: ${TRAINING_MIN_COMMITS:100}
+    cron: ${TRAINING_CRON:0 0 2 * * ?}
+
+  # Prioritization Service Configuration
+  prioritization:
+    service-url: ${PRIORITIZATION_SERVICE_URL:http://prioritization-service:8002}
+
+  # Keycloak Admin Configuration
+  keycloak:
+    server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8180}
+    realm: ${KEYCLOAK_REALM:cicd-integration}
+    client-id: ${KEYCLOAK_CLIENT_ID:cicd-service}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.testprioritization: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n"
+
+# SpringDoc OpenAPI / Swagger
+springdoc:
+  api-docs:
+    path: /api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
+    filter: true
+    try-it-out-enabled: true
+    persist-authorization: true
+  show-actuator: true
+  packages-to-scan: com.testprioritization.controller
+  paths-to-match: /v1/**
+
+---
+# Production Profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+  
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://postgres:5432/cicd_integration}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+logging:
+  level:
+    root: WARN
+    com.testprioritization: INFO
+    org.springframework.security: WARN
+
+---
+# Kubernetes Profile
+spring:
+  config:
+    activate:
+      on-profile: kubernetes
+  
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:cicd_integration}
+    username: ${DB_USERNAME:cicd}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+
+---
+# Local Profile - H2 in-memory (no Docker required)
+spring:
+  config:
+    activate:
+      on-profile: local
+  
+  datasource:
+    url: jdbc:h2:mem:cicd_integration;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+  
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+  
+  # Disable Redis for local profile
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cache:
+    type: simple
+  
+  # Disable OAuth2 Security completely for local testing
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+# Disable training for local
+app:
+  training:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.testprioritization: DEBUG
+    org.springframework.security: WARN
+
