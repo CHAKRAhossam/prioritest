@@ -7,6 +7,7 @@ from typing import Optional
 from src.services.ast_analyzer import ASTAnalyzer
 from src.services.test_generator import TestGenerator
 from src.services.test_suggestions import TestSuggestionsService
+from src.services.mock_generator import MockGenerator
 from src.models.ast_models import ClassAnalysis
 from src.models.test_suggestions import ClassSuggestions
 
@@ -14,6 +15,7 @@ router = APIRouter()
 ast_analyzer = ASTAnalyzer()
 test_generator = TestGenerator()
 suggestions_service = TestSuggestionsService()
+mock_generator = MockGenerator()
 
 
 class AnalyzeClassRequest(BaseModel):
