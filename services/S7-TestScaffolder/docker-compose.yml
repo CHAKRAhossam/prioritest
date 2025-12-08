@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  test-scaffolder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: s7-test-scaffolder
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./src:/app/src
+    environment:
+      PRIORITIZATION_SERVICE_URL: http://s6-moteur-priorisation:8006
+      GIT_REPO_URL: ${GIT_REPO_URL:-}
+      GIT_TOKEN: ${GIT_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
