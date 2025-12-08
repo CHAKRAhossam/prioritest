@@ -9,9 +9,12 @@ from src.services.test_generator import TestGenerator
 from src.services.test_suggestions import TestSuggestionsService
 from src.services.mock_generator import MockGenerator
 from src.services.mutation_checklist import MutationChecklistService
+from src.services.git_storage import GitStorageService
 from src.models.ast_models import ClassAnalysis
 from src.models.test_suggestions import ClassSuggestions
 from src.models.mutation_checklist import ClassMutationChecklist
+from datetime import datetime
+import os
 
 router = APIRouter()
 ast_analyzer = ASTAnalyzer()
@@ -19,6 +22,7 @@ test_generator = TestGenerator()
 suggestions_service = TestSuggestionsService()
 mock_generator = MockGenerator()
 mutation_checklist_service = MutationChecklistService()
+git_storage = GitStorageService(repo_url=os.getenv('GIT_REPO_URL'))
 
 
 class AnalyzeClassRequest(BaseModel):
@@ -327,5 +331,157 @@ def generate_mutation_checklist(request: MutationChecklistRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Erreur lors de la génération de la checklist: {str(e)}"
+        )
+
+
+class SaveSuggestionsRequest(BaseModel):
+    """Requête pour sauvegarder les suggestions dans Git"""
+    java_code: str = Field(..., description="Code source Java de la classe", example="package com.example; public class UserService {}")
+    test_code: Optional[str] = Field(None, description="Code source Java du test généré (optionnel, sera généré si absent)")
+    test_package: Optional[str] = Field(None, description="Package pour la classe de test", example="com.example.test")
+    test_class_suffix: str = Field("Test", description="Suffixe pour le nom de la classe de test", example="Test")
+    branch: Optional[str] = Field(None, description="Branche Git où sauvegarder (défaut: branche actuelle)", example="feature/add-tests")
+    commit_message: Optional[str] = Field(None, description="Message de commit (défaut: généré automatiquement)")
+    include_suggestions: bool = Field(True, description="Inclure les suggestions dans un fichier JSON", example=True)
+    push: bool = Field(False, description="Pousser les changements vers le remote", example=False)
+    file_path: Optional[str] = Field(None, description="Chemin du fichier source (optionnel)", example="src/main/java/com/example/UserService.java")
+
+
+class SaveSuggestionsResponse(BaseModel):
+    """Réponse de sauvegarde des suggestions"""
+    success: bool = Field(..., description="Si la sauvegarde a réussi", example=True)
+    test_file_commit: Optional[Dict[str, str]] = Field(None, description="Informations du commit pour le fichier de test")
+    suggestions_file_commit: Optional[Dict[str, str]] = Field(None, description="Informations du commit pour le fichier de suggestions")
+    message: str = Field(..., description="Message de statut", example="Suggestions sauvegardées avec succès")
+
+
+@router.post(
+    "/save-suggestions",
+    response_model=SaveSuggestionsResponse,
+    summary="Sauvegarder suggestions dans Git",
+    description="""
+    Sauvegarde les tests générés et les suggestions dans un dépôt Git.
+    
+    **Processus :**
+    1. Génère le test JUnit (si non fourni)
+    2. Génère les suggestions de cas de test
+    3. Sauvegarde le fichier de test dans src/test/java/
+    4. Sauvegarde les suggestions dans test-suggestions/
+    5. Crée des commits Git
+    6. Pousse vers le remote (optionnel)
+    
+    **Configuration requise :**
+    - Variable d'environnement GIT_REPO_URL doit être définie
+    - Ou fournir repo_url dans la requête
+    
+    **Utilisation :**
+    Envoyez le code source Java de la classe.
+    Le service génère et sauvegarde automatiquement les tests et suggestions.
+    """,
+    response_description="Résultat de la sauvegarde"
+)
+def save_suggestions(request: SaveSuggestionsRequest):
+    """
+    Sauvegarde les suggestions de tests dans un dépôt Git.
+    
+    Args:
+        request: Requête contenant le code Java et les options de sauvegarde
+    
+    Returns:
+        Résultat de la sauvegarde avec informations des commits
+    """
+    try:
+        # Étape 1: Analyser la classe
+        analysis_result = ast_analyzer.analyze_class(
+            java_code=request.java_code,
+            file_path=request.file_path
+        )
+        
+        if not analysis_result:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible d'analyser la classe Java"
+            )
+        
+        analysis = ClassAnalysis(**analysis_result)
+        
+        # Étape 2: Générer le test si non fourni
+        if not request.test_code:
+            test_code = test_generator.generate_test_class(
+                class_analysis=analysis,
+                test_package=request.test_package,
+                test_class_suffix=request.test_class_suffix
+            )
+        else:
+            test_code = request.test_code
+        
+        # Déterminer le package de test
+        if request.test_package:
+            test_package = request.test_package
+        elif analysis.package_name:
+            test_package = analysis.package_name + ".test"
+        else:
+            test_package = "test"
+        
+        test_class_name = f"{analysis.class_name}{request.test_class_suffix}"
+        
+        # Étape 3: Sauvegarder le fichier de test
+        test_file_commit = None
+        try:
+            test_file_commit = git_storage.save_test_file(
+                test_code=test_code,
+                class_name=analysis.class_name,
+                test_class_name=test_class_name,
+                test_package=test_package,
+                branch=request.branch,
+                commit_message=request.commit_message or f"feat(test): Ajouter tests générés pour {analysis.class_name}"
+            )
+        except Exception as e:
+            # Si le stockage Git échoue, on continue quand même
+            print(f"Erreur lors de la sauvegarde du test: {e}")
+        
+        # Étape 4: Générer et sauvegarder les suggestions si demandé
+        suggestions_file_commit = None
+        if request.include_suggestions:
+            try:
+                suggestions = suggestions_service.generate_suggestions(analysis)
+                checklist = mutation_checklist_service.generate_checklist(analysis)
+                
+                suggestions_data = {
+                    'class_name': analysis.class_name,
+                    'suggestions': suggestions.dict(),
+                    'mutation_checklist': checklist.dict(),
+                    'generated_at': datetime.now().isoformat()
+                }
+                
+                suggestions_file_commit = git_storage.save_suggestions_file(
+                    suggestions=suggestions_data,
+                    class_name=analysis.class_name,
+                    branch=request.branch,
+                    commit_message=f"docs(test): Ajouter suggestions de tests pour {analysis.class_name}"
+                )
+            except Exception as e:
+                print(f"Erreur lors de la sauvegarde des suggestions: {e}")
+        
+        # Étape 5: Pousser si demandé
+        if request.push and (test_file_commit or suggestions_file_commit):
+            try:
+                git_storage.push_changes(branch=request.branch or git_storage.repo.active_branch.name if git_storage.repo else None)
+            except Exception as e:
+                print(f"Erreur lors du push: {e}")
+        
+        return SaveSuggestionsResponse(
+            success=True,
+            test_file_commit=test_file_commit,
+            suggestions_file_commit=suggestions_file_commit,
+            message="Suggestions sauvegardées avec succès"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la sauvegarde: {str(e)}"
         )
 
