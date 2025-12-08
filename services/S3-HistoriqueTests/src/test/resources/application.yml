@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/historique_tests_test
+    username: admin
+    password: admin123
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+
+minio:
+  url: http://localhost:9000
+  access-key: admin
+  secret-key: admin123
+  bucket: test-bucket
+
+logging:
+  level:
+    root: WARN

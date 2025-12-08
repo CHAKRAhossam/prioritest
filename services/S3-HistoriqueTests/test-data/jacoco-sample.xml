@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report name="JaCoCo Coverage Report">
+  <package name="com/example/service">
+    <class name="com/example/service/UserService" sourcefilename="UserService.java">
+      <counter type="INSTRUCTION" missed="10" covered="90"/>
+      <counter type="BRANCH" missed="2" covered="8"/>
+      <counter type="LINE" missed="5" covered="45"/>
+      <counter type="COMPLEXITY" missed="2" covered="15"/>
+      <counter type="METHOD" missed="1" covered="9"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <class name="com/example/service/ProductService" sourcefilename="ProductService.java">
+      <counter type="INSTRUCTION" missed="25" covered="75"/>
+      <counter type="BRANCH" missed="5" covered="15"/>
+      <counter type="LINE" missed="12" covered="38"/>
+      <counter type="COMPLEXITY" missed="3" covered="12"/>
+      <counter type="METHOD" missed="2" covered="8"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+  <package name="com/example/controller">
+    <class name="com/example/controller/UserController" sourcefilename="UserController.java">
+      <counter type="INSTRUCTION" missed="5" covered="95"/>
+      <counter type="BRANCH" missed="1" covered="19"/>
+      <counter type="LINE" missed="3" covered="47"/>
+      <counter type="COMPLEXITY" missed="1" covered="18"/>
+      <counter type="METHOD" missed="0" covered="10"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+</report>
+

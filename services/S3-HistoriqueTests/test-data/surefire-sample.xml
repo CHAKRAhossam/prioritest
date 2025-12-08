@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.service.UserServiceTest" time="2.345" tests="5" errors="0" skipped="0" failures="1">
+  <testcase name="testCreateUser" classname="com.example.service.UserServiceTest" time="0.234">
+  </testcase>
+  <testcase name="testUpdateUser" classname="com.example.service.UserServiceTest" time="0.156">
+  </testcase>
+  <testcase name="testDeleteUser" classname="com.example.service.UserServiceTest" time="0.189">
+    <failure message="Expected user to be deleted" type="AssertionError">
+      java.lang.AssertionError: Expected user to be deleted
+        at com.example.service.UserServiceTest.testDeleteUser(UserServiceTest.java:45)
+    </failure>
+  </testcase>
+  <testcase name="testFindUserById" classname="com.example.service.UserServiceTest" time="0.123">
+  </testcase>
+  <testcase name="testListAllUsers" classname="com.example.service.UserServiceTest" time="0.567">
+  </testcase>
+</testsuite>
+
