@@ -74,13 +74,33 @@ Les événements publiés dans Kafka correspondent maintenant exactement aux sp�
 - [ ] Aligner format CI/CD comments
 - [ ] Vérifier format checks/status
 
+## Résumé des Modifications
+
+### ✅ Services Alignés
+
+1. **S1 - CollecteDepots** : Modèles d'événements créés, API REST alignée, webhooks documentés
+2. **S2 - AnalyseStatique** : Format Kafka `code.metrics` avec timestamp, format Feast aligné
+3. **S3 - HistoriqueTests** : API `/api/v1/test-metrics` déjà conforme aux spécifications
+
+### 📝 Documentation Créée
+
+- `docs/ARCHITECTURE_COMPLETE.md` : Documentation complète avec tous les JSON schemas
+- `docs/COMMUNICATION_MATRIX.md` : Matrice de communication détaillée
+- `docs/ARCHITECTURE_SUMMARY.md` : Résumé visuel
+- `CHANGES_ARCHITECTURE_ALIGNMENT.md` : Suivi des changements
+
+### 🔄 Services Vérifiés (Déjà Conformes)
+
+- **S3** : L'endpoint `/api/v1/test-metrics` correspond exactement aux spécifications
+- **S4-S9** : À vérifier individuellement selon les besoins
+
 ## Prochaines Étapes
 
-1. Continuer l'alignement des services S2-S9
-2. Vérifier les communications entre services
-3. Tester les formats JSON
-4. Mettre à jour les tests unitaires
-5. Documenter les changements
+1. ✅ Alignement S1-S3 terminé
+2. Tester les formats JSON avec des données réelles
+3. Vérifier les communications entre services (Kafka, REST)
+4. Mettre à jour les tests unitaires si nécessaire
+5. Documenter les changements dans les README des services
 
 ## Notes
 
