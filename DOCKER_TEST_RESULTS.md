@@ -34,13 +34,17 @@
 ## ❌ Services avec Problèmes
 
 ### S1 - CollecteDepots (port 8001)
-**Erreur**: `ModuleNotFoundError: No module named 'src.models.database'`
+**Status**: ✅ **RÉSOLU** - Service opérationnel
 
-**Cause**: Le module `database.py` n'existe pas dans `src/models/`
+**Problèmes résolus**:
+1. ✅ Créé `src/models/database.py` avec tous les modèles SQLAlchemy
+2. ✅ Corrigé conflit SQLAlchemy (renommé `metadata` → `metadata_json`)
+3. ✅ Ajouté imports manquants (`CommitEvent`, `IssueEvent` dans `webhooks.py`)
 
-**Solution nécessaire**:
-1. Créer `services/S1-CollecteDepots/src/models/database.py` avec les modèles SQLAlchemy
-2. Ou corriger l'import dans `database_service.py`
+**Note**: 
+- Service démarre correctement
+- Warnings TimescaleDB hypertable (normal, nécessite migration)
+- Erreurs Kafka temporaires (Kafka démarre après S1)
 
 ### Services Non Démarrés
 - **S2 - AnalyseStatique** (port 8081) - Non dans docker-compose principal
@@ -51,10 +55,10 @@
 ## 📊 Statistiques
 
 - **Services testés**: 9
-- **Services opérationnels**: 4 (S6, S7, S8, S9)
-- **Services avec erreurs**: 1 (S1)
-- **Services non démarrés**: 4 (S2, S3, S4, S5)
-- **Infrastructure opérationnelle**: 3/4 (PostgreSQL, MinIO, Zookeeper/Kafka)
+- **Services opérationnels**: 5 (S1, S6, S7, S8, S9) ✅
+- **Services avec erreurs**: 0
+- **Services non démarrés**: 4 (S2, S3, S4, S5) - Non dans docker-compose principal
+- **Infrastructure opérationnelle**: 4/4 (PostgreSQL, MinIO, Zookeeper, Kafka)
 
 ## 🔧 Actions Correctives Requises
 
