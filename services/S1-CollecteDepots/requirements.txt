@@ -17,7 +17,7 @@ minio==7.2.0
 
 # Git operations
 GitPython==3.1.40
-pygit2==1.12.2
+pygit2>=1.13.3
 
 # API clients
 requests==2.31.0
