@@ -1,5 +1,21 @@
 package com.testprioritization.model.webhook;
 
+/**
+ * GitLab webhook payload aligned with architecture specification.
+ * 
+ * Input format from architecture spec:
+ * {
+ *   "event_type": "merge_request",
+ *   "object_attributes": {
+ *     "iid": 45,
+ *     "source_branch": "feature/new-feature",
+ *     "last_commit": {
+ *       "id": "abc123"
+ *     }
+ *   }
+ * }
+ */
+
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
