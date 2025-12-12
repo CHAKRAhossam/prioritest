@@ -12,6 +12,7 @@ from src.services.gitlab_service import GitLabService
 from src.services.jira_service import JiraService
 from src.services.kafka_service import KafkaService
 from src.services.database_service import DatabaseService
+from src.models.events import CommitEvent, IssueEvent
 from src.config import settings
 
 logger = logging.getLogger(__name__)
