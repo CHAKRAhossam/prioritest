@@ -275,14 +275,14 @@ def _process_commit_event(
         
         # Store in database
         db_service.store_commit({
+            "event_id": event.event_id,
             "repository_id": event.repository_id,
             "commit_sha": event.commit_sha,
             "commit_message": event.commit_message,
             "author_email": event.author_email,
             "author_name": event.author_name,
             "timestamp": event.timestamp,
-            "branch": event.metadata.branch,
-            "files_changed_json": [f.model_dump() for f in event.files_changed],
+            "files_changed": [f.model_dump() for f in event.files_changed],
             "metadata_json": event.metadata.model_dump()
         })
         
@@ -305,14 +305,15 @@ def _process_issue_event(
         
         # Store in database
         db_service.store_issue({
+            "event_id": event.event_id,
             "repository_id": event.repository_id,
             "issue_key": event.issue_key,
             "issue_type": event.issue_type,
             "summary": event.summary,
             "status": event.status,
             "created_at": event.created_at,
-            "linked_commits_json": event.linked_commits,
-            "metadata_json": event.metadata or {}
+            "linked_commits": event.linked_commits,
+            "metadata_json": event.metadata.model_dump() if event.metadata else {}
         })
         
         kafka_service.flush()
