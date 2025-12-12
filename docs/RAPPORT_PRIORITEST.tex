@@ -1,0 +1,1316 @@
+\documentclass{rapport}
+
+\usepackage{lipsum}
+
+\title{PRIORITEST — Rapport}
+
+\begin{document}
+
+%----------- Informations du rapport ---------
+
+\logo{logos/EMSI.png}
+
+\unif{EMSI Marrakech}
+
+\titre{PRIORITEST — Plateforme de Recommandation Automatisée des Classes à Tester par Machine Learning}
+
+\cours{Développement multiplateforme}
+
+\enseignant{Hanae \textsc{Sbai}}
+
+\eleves{Hicham \textsc{Kaou} \\ 
+        Hossam \textsc{Chakra} \\ 
+        Haytam \textsc{Najam} \\ 
+        Oussama \textsc{Boujdig} \\ 
+        Ilyas \textsc{Michich}}
+
+%----------- Initialisation -------------------
+
+\fairemarges
+
+\fairepagedegarde
+
+\tabledematieres
+
+%------------ Corps du rapport ----------------
+
+\section{Introduction}
+
+\subsection{Contexte}
+
+La qualité logicielle et la couverture de tests unitaires demeurent un enjeu critique dans le développement logiciel. Identifier manuellement les classes les plus critiques à tester est coûteux et subjectif.
+
+\textit{PRIORITEST} aide les \textbf{développeurs} et les \textbf{chefs de projet} à \textbf{améliorer la couverture de tests} via :
+
+\begin{itemize}
+    \item la \textbf{collecte automatique} de métriques de code et d'historique de tests ;
+    \item l'exploitation d'un \textbf{modèle de Machine Learning pré-entraîné} pour prédire le risque de défaut par classe ;
+    \item la \textbf{priorisation effort-aware} des classes à tester en intégrant l'effort de développement et la criticité des modules ;
+    \item la \textbf{génération automatique} de squelettes de tests JUnit avec suggestions de cas de test.
+\end{itemize}
+
+\subsection{Objectifs}
+
+\begin{itemize}
+    \item Structurer le projet en \textbf{9 microservices} indépendants avec communication synchrone (HTTP/REST) et asynchrone (Kafka).
+    \item Recueillir des \textbf{métriques de code} (LOC, complexité, CK, dépendances) et \textbf{historique de tests} (couverture, mutation score) pour produire un \textbf{score de risque} explicable.
+    \item Industrialiser la qualité : \textbf{tests unitaires} (JUnit, pytest), \textbf{tests d'intégration}, \textbf{SonarQube}, \textbf{JMeter}, \textbf{CI/CD} (GitLab CI).
+    \item Fournir une \textbf{interface de visualisation} (Dashboard React.js) pour consulter les recommandations et métriques.
+\end{itemize}
+
+\subsection{Acteurs}
+
+Deux acteurs principaux :
+
+\begin{itemize}
+    \item \textbf{Développeur} : consulte les recommandations de priorisation, génère des tests pour les classes priorisées, applique les suggestions.
+    \item \textbf{Chef de projet / DevOps} : configure les dépôts à analyser, consulte les rapports de couverture, surveille les métriques de qualité.
+\end{itemize}
+
+%----------------------------------------------------------
+
+\section{Diagramme BPMN avec description détaillée des processus métiers}
+
+\subsection{Service 1 - Collecte Depots}
+
+\insererfigure{BPMN_S1.jpg}{8cm}{Diagramme BPMN - Processus de collecte (Service 1)}{fig:bpmn-s1}
+
+Le diagramme BPMN du Service 1 décrit le workflow principal de collecte avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{API Layer} : Réception des requêtes de collecte (GitHub, GitLab, Jira)
+    \item \textbf{Collection Layer} : Collecte des dépôts Git, issues, rapports CI/CD
+    \item \textbf{Processing Layer} : Traitement et validation des données collectées
+    \item \textbf{Publication Layer} : Publication d'événements Kafka, stockage métadonnées (PostgreSQL), archivage artefacts (MinIO)
+\end{itemize}
+
+\textbf{Description détaillée du processus métier :}
+\begin{enumerate}
+    \item \textbf{Début} : Réception requête de collecte (repository\_id, type)
+    \item \textbf{Validation} : Vérification des paramètres et authentification
+    \item \textbf{Collecte Git} : Clonage/update dépôt, extraction commits
+    \item \textbf{Collecte Issues} : Récupération issues GitHub/GitLab/Jira
+    \item \textbf{Collecte CI/CD} : Parsing rapports JaCoCo, Surefire, PIT
+    \item \textbf{Traitement} : Normalisation et validation des données
+    \item \textbf{Publication Kafka} : Événements vers topics (code-analysis, test-reports)
+    \item \textbf{Stockage} : Métadonnées vers PostgreSQL, artefacts vers MinIO
+    \item \textbf{Fin} : Confirmation de collecte réussie
+\end{enumerate}
+
+\subsection{Service 2 - Analyse Statique}
+
+\insererfigure{BPMN_S2.jpg}{8cm}{Diagramme BPMN - Processus d'analyse statique (Service 2)}{fig:bpmn-s2}
+
+Le diagramme BPMN du Service 2 décrit le workflow d'analyse statique avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Event Consumer} : Réception événements Kafka depuis S1
+    \item \textbf{Analysis Layer} : Extraction métriques avec JavaParser, CK, PMD
+    \item \textbf{Feature Layer} : Construction et validation des features
+    \item \textbf{Publication Layer} : Publication vers Feast Feature Store
+\end{itemize}
+
+\textbf{Description détaillée du processus métier :}
+\begin{enumerate}
+    \item \textbf{Début} : Réception événement Kafka (nouveau commit, fichier modifié)
+    \item \textbf{Parsing Code} : Analyse AST avec JavaParser
+    \item \textbf{Extraction CK} : Calcul métriques CK (LOC, WMC, DIT, CBO, etc.)
+    \item \textbf{Calcul Complexité} : Complexité cyclomatique par méthode
+    \item \textbf{Détection Smells} : Analyse PMD pour code smells
+    \item \textbf{Analyse Dépendances} : Mapping des dépendances entre classes
+    \item \textbf{Construction Features} : Agrégation métriques en features
+    \item \textbf{Validation} : Vérification cohérence et complétude
+    \item \textbf{Publication Feast} : Envoi features vers Feature Store
+    \item \textbf{Fin} : Confirmation traitement
+\end{enumerate}
+
+\subsection{Service 3 - Historique Tests}
+
+\insererfigure{BPMN_S3.jpg}{8cm}{Diagramme BPMN - Processus d'agrégation historique tests (Service 3)}{fig:bpmn-s3}
+
+Le diagramme BPMN du Service 3 décrit le workflow d'agrégation des résultats de tests avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Event Consumer} : Réception événements Kafka (rapports CI/CD)
+    \item \textbf{Parsing Layer} : Parsing rapports JaCoCo, Surefire, PIT
+    \item \textbf{Processing Layer} : Calcul métriques (couverture, flakiness)
+    \item \textbf{Storage Layer} : Stockage séries temporelles (TimescaleDB)
+\end{itemize}
+
+\textbf{Description détaillée du processus métier :}
+\begin{enumerate}
+    \item \textbf{Début} : Réception événement Kafka (rapport CI/CD disponible)
+    \item \textbf{Récupération Rapport} : Téléchargement depuis MinIO
+    \item \textbf{Parsing JaCoCo} : Extraction couverture (ligne, branche, méthode)
+    \item \textbf{Parsing Surefire} : Extraction résultats tests (PASSED/FAILED/SKIPPED)
+    \item \textbf{Parsing PIT} : Extraction mutation score (killed/survived)
+    \item \textbf{Calcul Métriques} : Agrégation par classe, calcul flakiness
+    \item \textbf{Validation} : Vérification cohérence temporelle
+    \item \textbf{Stockage TimescaleDB} : Insertion séries temporelles
+    \item \textbf{Fin} : Confirmation traitement
+\end{enumerate}
+
+\subsection{Service 4 - Pretraitement Features}
+
+\insererfigure{BPMN_S4.jpg}{8cm}{Diagramme BPMN - Processus de prétraitement features (Service 4)}{fig:bpmn-s4}
+
+Le diagramme BPMN du Service 4 décrit le workflow de prétraitement avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Data Ingestion} : Lecture features depuis Feast
+    \item \textbf{Cleaning Layer} : Nettoyage et imputation
+    \item \textbf{Engineering Layer} : Construction features dérivées
+    \item \textbf{Balancing Layer} : Balancement classes (SMOTE)
+    \item \textbf{Splitting Layer} : Split temporel train/val/test
+    \item \textbf{Publication Layer} : Publication vers Feast
+\end{itemize}
+
+\textbf{Description détaillée du processus métier :}
+\begin{enumerate}
+    \item \textbf{Début} : Déclenchement pipeline (manuel ou automatique)
+    \item \textbf{Lecture Feast} : Récupération features brutes depuis Feature Store
+    \item \textbf{Nettoyage} : Suppression doublons, valeurs aberrantes
+    \item \textbf{Imputation} : Remplacement valeurs manquantes (médiane, mode)
+    \item \textbf{Features Dérivées} : Calcul churn, nombre auteurs, bug-fix proximity
+    \item \textbf{Encodage} : Encodage variables catégorielles
+    \item \textbf{Balancement} : Application SMOTE si déséquilibre classes
+    \item \textbf{Split Temporel} : Division train/val/test par date
+    \item \textbf{Validation} : Vérification qualité données
+    \item \textbf{Publication Feast} : Envoi features traitées vers Feature Store
+    \item \textbf{Fin} : Confirmation traitement
+\end{enumerate}
+
+\subsection{Service 5 - ML Service}
+
+\insererfigure{BPMN_S5.jpg}{8cm}{Diagramme BPMN - Processus ML (Service 5)}{fig:bpmn-s5}
+
+Le diagramme BPMN du Service 5 décrit le workflow Machine Learning avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Training Layer} : Entraînement modèles (XGBoost, LightGBM)
+    \item \textbf{Prediction Layer} : Service de prédiction en temps réel
+    \item \textbf{Explanation Layer} : Explicabilité avec SHAP
+    \item \textbf{Registry Layer} : Gestion modèles (MLflow)
+    \item \textbf{Storage Layer} : Stockage modèles (MinIO)
+\end{itemize}
+
+\textbf{Description détaillée du processus métier - Entraînement :}
+\begin{enumerate}
+    \item \textbf{Début} : Déclenchement entraînement (manuel ou automatique)
+    \item \textbf{Lecture Features} : Récupération depuis Feast (train set)
+    \item \textbf{Préparation} : Normalisation, feature selection
+    \item \textbf{Entraînement XGBoost} : Modèle gradient boosting
+    \item \textbf{Entraînement LightGBM} : Modèle alternatif
+    \item \textbf{Validation} : Évaluation sur validation set (AUC, F1, Precision, Recall)
+    \item \textbf{Sélection Modèle} : Choix meilleur modèle selon métriques
+    \item \textbf{Enregistrement MLflow} : Sauvegarde expérience et métriques
+    \item \textbf{Stockage MinIO} : Sauvegarde fichier modèle (.pkl)
+    \item \textbf{Registry MLflow} : Promotion modèle en production
+    \item \textbf{Fin} : Confirmation entraînement
+\end{enumerate}
+
+\textbf{Description détaillée du processus métier - Prédiction :}
+\begin{enumerate}
+    \item \textbf{Début} : Requête POST /api/v1/predictions
+    \item \textbf{Validation} : Vérification paramètres (repository\_id, sprint\_id)
+    \item \textbf{Chargement Modèle} : Récupération depuis MLflow Registry ou MinIO
+    \item \textbf{Préparation Features} : Récupération depuis Feast, transformation
+    \item \textbf{Prédiction} : Calcul scores de risque par classe
+    \item \textbf{Explication SHAP} : Calcul contributions features
+    \item \textbf{Construction Réponse} : Format JSON avec scores et explications
+    \item \textbf{Fin} : Retour HTTP 200 OK
+\end{enumerate}
+
+\subsection{Service 6 - Moteur Priorisation}
+
+\insererfigure{BPMN_S6.png}{8cm}{Diagramme BPMN - Workflow de priorisation (Service 6)}{fig:bpmn-s6}
+
+Le diagramme BPMN du Service 6 décrit le workflow principal de priorisation avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{API Layer} : Réception et validation des requêtes HTTP
+    \item \textbf{ML Integration Layer} : Appel au Service S5 pour récupérer les prédictions
+    \item \textbf{Processing Layer} : Calcul de l'effort, score effort-aware, application de la criticité
+    \item \textbf{Strategy Layer} : Application des stratégies de priorisation et calcul des métriques
+    \item \textbf{Output Layer} : Construction de la réponse et sauvegarde optionnelle
+\end{itemize}
+
+\textbf{Description détaillée du processus métier :}
+\begin{enumerate}
+    \item \textbf{Début} : Réception requête POST /prioritize
+    \item \textbf{Validation} : Vérification paramètres (repository\_id, sprint\_id, strategy)
+    \item \textbf{Appel S5} : Récupération prédictions ML (risk\_score, loc, complexity)
+    \item \textbf{Calcul Effort} : effort\_hours = (LOC / loc\_per\_hour) * complexity\_multiplier
+    \item \textbf{Score Effort-Aware} : effort\_aware\_score = risk\_score / effort\_hours
+    \item \textbf{Criticité Module} : Détection (auth, payment, etc.) et application poids
+    \item \textbf{Stratégie} : Application stratégie sélectionnée (maximize\_popt20, top\_k, budget, etc.)
+    \item \textbf{Optimisation} : OR-Tools si contraintes (budget, coverage)
+    \item \textbf{Calcul Métriques} : Popt@20, Recall@Top20, Coverage Gain
+    \item \textbf{Construction Plan} : Liste priorisée avec métadonnées
+    \item \textbf{Sauvegarde (optionnel)} : Stockage plan dans PostgreSQL
+    \item \textbf{Fin} : Retour HTTP 200 OK avec plan priorisé
+\end{enumerate}
+
+\subsection{Service 7 - Test Scaffolder}
+
+\insererfigure{BPMN_S7.png}{8cm}{Diagramme BPMN - Génération de tests (Service 7)}{fig:bpmn-s7}
+
+Le diagramme BPMN du Service 7 décrit le processus de génération de tests JUnit avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{API Layer} : Réception requêtes (analyse, génération, suggestions)
+    \item \textbf{Analysis Layer} : Analyse AST Java avec tree-sitter
+    \item \textbf{Generation Layer} : Génération tests JUnit et mocks Mockito
+    \item \textbf{Suggestion Layer} : Génération suggestions cas de test
+    \item \textbf{Mutation Layer} : Génération checklist mutation testing
+    \item \textbf{Storage Layer} : Sauvegarde optionnelle dans Git
+\end{itemize}
+
+\textbf{Description détaillée du processus métier :}
+\begin{enumerate}
+    \item \textbf{Début} : Réception requête (java\_code, options)
+    \item \textbf{Validation} : Vérification syntaxe Java
+    \item \textbf{Analyse AST} : Parsing avec tree-sitter-java
+    \item \textbf{Extraction Structure} : Classes, méthodes, constructeurs, champs, dépendances
+    \item \textbf{Génération Test} : Création squelette JUnit avec structure AAA
+    \item \textbf{Génération Mocks} : Création mocks Mockito pour dépendances
+    \item \textbf{Suggestions} : Génération suggestions (équivalence, limites, exceptions, null)
+    \item \textbf{Checklist Mutation} : Génération checklist opérateurs mutation
+    \item \textbf{Formatage} : Application template Jinja2
+    \item \textbf{Sauvegarde Git (optionnel)} : Commit dans branche dédiée
+    \item \textbf{Fin} : Retour code test généré + suggestions + checklist
+\end{enumerate}
+
+\subsection{Service 8 - Dashboard Qualité}
+
+% Diagramme BPMN S8 à créer
+% \insererfigure{BPMN_S8.png}{8cm}{Diagramme BPMN - Processus Dashboard (Service 8)}{fig:bpmn-s8}
+
+Le diagramme BPMN du Service 8 décrit le workflow du dashboard avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Frontend Layer} : Interface React.js, interactions utilisateur
+    \item \textbf{API Layer} : Endpoints FastAPI backend
+    \item \textbf{Data Aggregation Layer} : Agrégation données depuis S6 et S7
+    \item \textbf{Visualization Layer} : Génération graphiques Plotly.js
+    \item \textbf{WebSocket Layer} : Communication temps réel
+    \item \textbf{Report Layer} : Génération rapports PDF/CSV
+\end{itemize}
+
+\textbf{Description détaillée du processus métier :}
+\begin{enumerate}
+    \item \textbf{Début} : Connexion utilisateur au dashboard
+    \item \textbf{Authentification} : Vérification JWT via Keycloak
+    \item \textbf{Chargement Données} : Requêtes API vers S6 (plans) et S7 (tests générés)
+    \item \textbf{Agrégation} : Fusion et traitement données
+    \item \textbf{Génération Graphiques} : Création graphiques Plotly.js (couverture, risques, priorités)
+    \item \textbf{Affichage} : Rendu interface React.js
+    \item \textbf{WebSocket} : Connexion pour mises à jour temps réel
+    \item \textbf{Export (si demandé)} : Génération rapport PDF/CSV
+    \item \textbf{Fin} : Session utilisateur active
+\end{enumerate}
+
+\subsection{Service 9 - Integrations \& Ops}
+
+\insererfigure{BPMN_S9.jpg}{8cm}{Diagramme BPMN - Processus intégrations (Service 9)}{fig:bpmn-s9}
+
+Le diagramme BPMN du Service 9 décrit le workflow des intégrations avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{CI/CD Layer} : Intégration pipelines GitLab CI / GitHub Actions
+    \item \textbf{PR Comment Layer} : Génération et publication commentaires PR/MR
+    \item \textbf{Auth Layer} : Gestion authentification SSO (Keycloak)
+    \item \textbf{Monitoring Layer} : Observabilité avec OpenTelemetry
+    \item \textbf{Deployment Layer} : Déploiement Docker/Kubernetes
+\end{itemize}
+
+\textbf{Description détaillée du processus métier - CI/CD :}
+\begin{enumerate}
+    \item \textbf{Début} : Déclenchement pipeline CI/CD (push, merge request)
+    \item \textbf{Build} : Compilation services (Maven/Gradle, pip)
+    \item \textbf{Tests} : Exécution tests unitaires et d'intégration
+    \item \textbf{SonarQube} : Analyse qualité code
+    \item \textbf{Build Docker} : Création images Docker
+    \item \textbf{Déploiement} : Déploiement en environnement (dev/staging/prod)
+    \item \textbf{Fin} : Confirmation déploiement
+\end{enumerate}
+
+\textbf{Description détaillée du processus métier - Commentaires PR :}
+\begin{enumerate}
+    \item \textbf{Début} : Événement webhook (nouveau commit, PR ouvert)
+    \item \textbf{Analyse} : Récupération résultats PRIORITEST pour commit
+    \item \textbf{Génération Commentaire} : Formatage recommandations et métriques
+    \item \textbf{Publication} : Post commentaire sur PR/MR (GitHub/GitLab API)
+    \item \textbf{Fin} : Confirmation publication
+\end{enumerate}
+
+%----------------------------------------------------------
+
+\section{Architecture Microservices}
+
+\subsection{Schéma (vue d'ensemble)}
+
+\insererfigure{diagrams/Architecture_Prioritest_General.drawio}{8cm}{Architecture générale - Vue d'ensemble PRIORITEST}{fig:architecture-general}
+
+\insererfigure{diagrams/Architecture_Prioritest_Complete.drawio}{8cm}{Architecture complète des microservices PRIORITEST avec détails techniques}{fig:architecture-complete}
+
+\subsection{Rôle de chaque microservice}
+
+Le projet est organisé en \textbf{9 microservices} indépendants :
+
+\subsubsection{S1 - Collecte Depots}
+\textbf{Rôle :} Ingestion des dépôts Git/GitHub/GitLab, issues Jira, rapports CI/CD. Collecte automatique des données sources nécessaires à l'analyse.
+
+\subsubsection{S2 - Analyse Statique}
+\textbf{Rôle :} Extraction de métriques de code (LOC, complexité, CK, smells). Analyse statique du code source pour identifier les caractéristiques des classes.
+
+\subsubsection{S3 - Historique Tests}
+\textbf{Rôle :} Agrégation de la couverture et des résultats de tests. Historique temporel des métriques de tests pour chaque classe.
+
+\subsubsection{S4 - Pretraitement Features}
+\textbf{Rôle :} Nettoyage, construction de features dérivées, balancement des classes. Préparation des données pour l'entraînement ML.
+
+\subsubsection{S5 - ML Service}
+\textbf{Rôle :} Modèles ML pour prédiction de risque de défaut. Entraînement et service de modèles de Machine Learning avec explicabilité.
+
+\subsubsection{S6 - Moteur Priorisation}
+\textbf{Rôle :} Transformation des scores ML en liste priorisée. Calcul effort-aware et optimisation sous contraintes.
+
+\subsubsection{S7 - Test Scaffolder}
+\textbf{Rôle :} Génération de squelettes de tests JUnit avec suggestions. Automatisation de la création de tests unitaires.
+
+\subsubsection{S8 - Dashboard Qualité}
+\textbf{Rôle :} Interface React.js de visualisation. Présentation des recommandations, métriques et rapports.
+
+\subsubsection{S9 - Integrations \& Ops}
+\textbf{Rôle :} CI/CD, commentaires PR automatiques, authentification SSO. Intégrations avec les outils de développement.
+
+\subsection{Technologies utilisées par chaque microservice}
+
+\subsubsection{S1 - Collecte Depots}
+\begin{itemize}
+    \item \textbf{Langage} : Java
+    \item \textbf{Bibliothèques} : JGit, GitHub API, GitLab API, Jira API
+    \item \textbf{Messaging} : Apache Kafka (Producer)
+    \item \textbf{Base de données} : PostgreSQL
+    \item \textbf{Stockage} : MinIO
+\end{itemize}
+
+\subsubsection{S2 - Analyse Statique}
+\begin{itemize}
+    \item \textbf{Langage} : Java
+    \item \textbf{Framework} : Spring Boot 3.2
+    \item \textbf{Outils} : JavaParser, CK Metrics, PMD
+    \item \textbf{Feature Store} : Feast
+    \item \textbf{Port} : 8080
+\end{itemize}
+
+\subsubsection{S3 - Historique Tests}
+\begin{itemize}
+    \item \textbf{Langage} : Java
+    \item \textbf{Framework} : Spring Boot 3.1.4, FastAPI
+    \item \textbf{Parsers} : JaCoCo, Surefire, PIT
+    \item \textbf{Base de données} : TimescaleDB
+    \item \textbf{Stockage} : MinIO
+    \item \textbf{Port} : 8003
+\end{itemize}
+
+\subsubsection{S4 - Pretraitement Features}
+\begin{itemize}
+    \item \textbf{Langage} : Python 3.11
+    \item \textbf{Bibliothèques} : Pandas, scikit-learn, SMOTE
+    \item \textbf{Data Versioning} : DVC
+    \item \textbf{Feature Store} : Feast
+    \item \textbf{Port} : 8004
+\end{itemize}
+
+\subsubsection{S5 - ML Service}
+\begin{itemize}
+    \item \textbf{Langage} : Python 3.11
+    \item \textbf{Framework} : FastAPI
+    \item \textbf{ML} : XGBoost, LightGBM
+    \item \textbf{Explicabilité} : SHAP
+    \item \textbf{MLOps} : MLflow (Experiments, Model Registry)
+    \item \textbf{Stockage} : MinIO (modèles)
+    \item \textbf{Port} : 8005
+\end{itemize}
+
+\subsubsection{S6 - Moteur Priorisation}
+\begin{itemize}
+    \item \textbf{Langage} : Python 3.11
+    \item \textbf{Framework} : FastAPI
+    \item \textbf{Optimisation} : OR-Tools (SCIP solver)
+    \item \textbf{Base de données} : PostgreSQL
+    \item \textbf{Port} : 8006
+\end{itemize}
+
+\subsubsection{S7 - Test Scaffolder}
+\begin{itemize}
+    \item \textbf{Langage} : Python 3.11
+    \item \textbf{Framework} : FastAPI
+    \item \textbf{Analyse de code} : tree-sitter-java
+    \item \textbf{Templates} : Jinja2
+    \item \textbf{Git} : GitPython
+    \item \textbf{Port} : 8007
+\end{itemize}
+
+\subsubsection{S8 - Dashboard Qualité}
+\begin{itemize}
+    \item \textbf{Frontend} : React.js + Vite, TypeScript
+    \item \textbf{Visualisation} : Plotly.js
+    \item \textbf{Communication} : WebSockets
+    \item \textbf{Backend} : FastAPI (Python)
+    \item \textbf{Port} : 3000 (frontend)
+\end{itemize}
+
+\subsubsection{S9 - Integrations \& Ops}
+\begin{itemize}
+    \item \textbf{Langage} : Python
+    \item \textbf{APIs} : GitHub API, GitLab API
+    \item \textbf{Auth} : Keycloak (SSO)
+    \item \textbf{Orchestration} : Docker, Kubernetes
+    \item \textbf{Observabilité} : OpenTelemetry
+    \item \textbf{Port} : 8009
+\end{itemize}
+
+\subsection{Base de données associée à chaque microservice}
+
+\subsubsection{S1 - Collecte Depots}
+\begin{itemize}
+    \item \textbf{PostgreSQL} : Métadonnées des dépôts, configurations, historique de collecte
+    \item \textbf{MinIO} : Stockage des artefacts CI/CD (rapports bruts, logs)
+\end{itemize}
+
+\subsubsection{S2 - Analyse Statique}
+\begin{itemize}
+    \item \textbf{Feast Feature Store} : Features extraites (métriques de code versionnées)
+    \item Pas de base de données relationnelle directe
+\end{itemize}
+
+\subsubsection{S3 - Historique Tests}
+\begin{itemize}
+    \item \textbf{TimescaleDB} : Séries temporelles pour historique des tests (couverture, résultats par commit)
+    \item \textbf{MinIO} : Archivage des rapports bruts (JaCoCo, Surefire, PIT)
+\end{itemize}
+
+\subsubsection{S4 - Pretraitement Features}
+\begin{itemize}
+    \item \textbf{Feast Feature Store} : Features traitées (entrées et sorties du pipeline)
+    \item Pas de base de données relationnelle directe
+\end{itemize}
+
+\subsubsection{S5 - ML Service}
+\begin{itemize}
+    \item \textbf{MLflow} : Registry de modèles, expériences, métriques d'entraînement
+    \item \textbf{MinIO} : Fichiers de modèles (.pkl)
+    \item Pas de base de données relationnelle directe
+\end{itemize}
+
+\subsubsection{S6 - Moteur Priorisation}
+\begin{itemize}
+    \item \textbf{PostgreSQL} : Politiques de priorisation, plans sauvegardés
+    \begin{itemize}
+        \item Table \texttt{Policy} : Politiques avec stratégies et contraintes
+        \item Table \texttt{PrioritizationPlan} : Plans de priorisation historiques
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{S7 - Test Scaffolder}
+\begin{itemize}
+    \item Pas de base de données relationnelle
+    \item Stockage optionnel dans Git (fichiers générés)
+\end{itemize}
+
+\subsubsection{S8 - Dashboard Qualité}
+\begin{itemize}
+    \item Pas de base de données relationnelle directe
+    \item Données en temps réel depuis S6 et S7 via API
+    \item Métriques vers Grafana (monitoring)
+\end{itemize}
+
+\subsubsection{S9 - Integrations \& Ops}
+\begin{itemize}
+    \item Pas de base de données relationnelle directe
+    \item Configuration via variables d'environnement
+\end{itemize}
+
+\subsection{Méthodes de communication entre microservices (synchrone ou asynchrone, avec l'outil utilisé)}
+
+\subsubsection{Communication synchrone (HTTP/REST)}
+
+\textbf{Outil utilisé :} HTTP/REST (JSON)
+
+\begin{itemize}
+    \item \textbf{Frontend (S8) $\rightarrow$ API Gateway $\rightarrow$ Services} : 
+    \begin{itemize}
+        \item Type : Synchrone
+        \item Protocole : HTTP/1.1, HTTP/2
+        \item Format : JSON
+        \item Authentification : JWT via Keycloak (S9)
+    \end{itemize}
+    
+    \item \textbf{S6 $\rightarrow$ S5 (ML Service)} : 
+    \begin{itemize}
+        \item Type : Synchrone
+        \item Endpoint : \texttt{GET /api/v1/predictions}
+        \item Format : JSON
+        \item Timeout : 30 secondes
+        \item Client : \texttt{MLServiceClient} (httpx)
+    \end{itemize}
+    
+    \item \textbf{S8 $\rightarrow$ S6, S7} : 
+    \begin{itemize}
+        \item Type : Synchrone
+        \item Endpoints : \texttt{/prioritize}, \texttt{/scaffold}
+        \item Format : JSON
+        \item WebSockets pour temps réel (S8)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Communication asynchrone (Kafka)}
+
+\textbf{Outil utilisé :} Apache Kafka
+
+\begin{itemize}
+    \item \textbf{S1 $\rightarrow$ S2} : 
+    \begin{itemize}
+        \item Type : Asynchrone
+        \item Topic : \texttt{code-analysis-events}
+        \item Format : JSON (événements)
+        \item Contenu : Nouveaux commits, fichiers modifiés
+    \end{itemize}
+    
+    \item \textbf{S1 $\rightarrow$ S3} : 
+    \begin{itemize}
+        \item Type : Asynchrone
+        \item Topic : \texttt{test-reports-events}
+        \item Format : JSON (événements)
+        \item Contenu : Rapports CI/CD disponibles
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Communication via Feature Store}
+
+\textbf{Outil utilisé :} Feast Feature Store
+
+\begin{itemize}
+    \item \textbf{S2 $\rightarrow$ S4 $\rightarrow$ S5} : 
+    \begin{itemize}
+        \item Type : Asynchrone (publication/consommation)
+        \item Workflow : 
+        \begin{enumerate}
+            \item S2 publie features brutes $\rightarrow$ Feast
+            \item S4 lit features brutes, traite, publie features traitées $\rightarrow$ Feast
+            \item S5 lit features traitées pour entraînement/prédiction
+        \end{enumerate}
+        \item Format : Features versionnées (Parquet, SQL)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Communication via Stockage}
+
+\textbf{Outils utilisés :} MinIO (S3-compatible), MLflow
+
+\begin{itemize}
+    \item \textbf{S1 $\rightarrow$ S3, S5} : 
+    \begin{itemize}
+        \item Type : Stockage d'objets
+        \item Outil : MinIO
+        \item Format : Fichiers (rapports XML, modèles .pkl)
+        \item Protocole : S3 API
+    \end{itemize}
+    
+    \item \textbf{S5 $\rightarrow$ S6 (indirect)} : 
+    \begin{itemize}
+        \item Type : Registry de modèles
+        \item Outil : MLflow Model Registry
+        \item Format : Métadonnées de modèles (version, métriques)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Résumé des communications}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+\textbf{Source} & \textbf{Destination} & \textbf{Type} & \textbf{Outil} & \textbf{Format} \\
+\hline
+S8 & API Gateway & Synchrone & HTTP/REST & JSON \\
+API Gateway & S1-S9 & Synchrone & HTTP/REST & JSON \\
+S6 & S5 & Synchrone & HTTP/REST & JSON \\
+S1 & S2 & Asynchrone & Kafka & JSON Events \\
+S1 & S3 & Asynchrone & Kafka & JSON Events \\
+S2 & S4 & Asynchrone & Feast & Features \\
+S4 & S5 & Asynchrone & Feast & Features \\
+S1 & S3, S5 & Stockage & MinIO & Fichiers \\
+S5 & MLflow & Registry & MLflow & Métadonnées \\
+\hline
+\end{tabular}
+\caption{Tableau récapitulatif des méthodes de communication}
+\end{table}
+
+%----------------------------------------------------------
+
+%----------------------------------------------------------
+
+\section{Conception de chaque microservice}
+
+\subsubsection{Service 1 - Collecte Depots}
+
+\insererfigure{BPMN_S1.jpg}{8cm}{Diagramme BPMN - Processus de collecte (Service 1)}{fig:bpmn-s1}
+
+Le diagramme BPMN du Service 1 décrit le workflow principal de collecte avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{API Layer} : Réception des requêtes de collecte (GitHub, GitLab, Jira)
+    \item \textbf{Collection Layer} : Collecte des dépôts Git, issues, rapports CI/CD
+    \item \textbf{Processing Layer} : Traitement et validation des données collectées
+    \item \textbf{Publication Layer} : Publication d'événements Kafka, stockage métadonnées (PostgreSQL), archivage artefacts (MinIO)
+\end{itemize}
+
+\textbf{Processus détaillé :}
+\begin{enumerate}
+    \item Début : Réception requête de collecte (repository\_id, type)
+    \item Validation : Vérification des paramètres et authentification
+    \item Collecte Git : Clonage/update dépôt, extraction commits
+    \item Collecte Issues : Récupération issues GitHub/GitLab/Jira
+    \item Collecte CI/CD : Parsing rapports JaCoCo, Surefire, PIT
+    \item Traitement : Normalisation et validation des données
+    \item Publication Kafka : Événements vers topics (code-analysis, test-reports)
+    \item Stockage : Métadonnées vers PostgreSQL, artefacts vers MinIO
+    \item Fin : Confirmation de collecte réussie
+\end{enumerate}
+
+\subsubsection{Service 2 - Analyse Statique}
+
+\insererfigure{BPMN_S2.jpg}{8cm}{Diagramme BPMN - Processus d'analyse statique (Service 2)}{fig:bpmn-s2}
+
+Le diagramme BPMN du Service 2 décrit le workflow d'analyse statique avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Event Consumer} : Réception événements Kafka depuis S1
+    \item \textbf{Analysis Layer} : Extraction métriques avec JavaParser, CK, PMD
+    \item \textbf{Feature Layer} : Construction et validation des features
+    \item \textbf{Publication Layer} : Publication vers Feast Feature Store
+\end{itemize}
+
+\textbf{Processus détaillé :}
+\begin{enumerate}
+    \item Début : Réception événement Kafka (nouveau commit, fichier modifié)
+    \item Parsing Code : Analyse AST avec JavaParser
+    \item Extraction CK : Calcul métriques CK (LOC, WMC, DIT, CBO, etc.)
+    \item Calcul Complexité : Complexité cyclomatique par méthode
+    \item Détection Smells : Analyse PMD pour code smells
+    \item Analyse Dépendances : Mapping des dépendances entre classes
+    \item Construction Features : Agrégation métriques en features
+    \item Validation : Vérification cohérence et complétude
+    \item Publication Feast : Envoi features vers Feature Store
+    \item Fin : Confirmation traitement
+\end{enumerate}
+
+\subsubsection{Service 3 - Historique Tests}
+
+\insererfigure{BPMN_S3.jpg}{8cm}{Diagramme BPMN - Processus d'agrégation historique tests (Service 3)}{fig:bpmn-s3}
+
+Le diagramme BPMN du Service 3 décrit le workflow d'agrégation des résultats de tests avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Event Consumer} : Réception événements Kafka (rapports CI/CD)
+    \item \textbf{Parsing Layer} : Parsing rapports JaCoCo, Surefire, PIT
+    \item \textbf{Processing Layer} : Calcul métriques (couverture, flakiness)
+    \item \textbf{Storage Layer} : Stockage séries temporelles (TimescaleDB)
+\end{itemize}
+
+\textbf{Processus détaillé :}
+\begin{enumerate}
+    \item Début : Réception événement Kafka (rapport CI/CD disponible)
+    \item Récupération Rapport : Téléchargement depuis MinIO
+    \item Parsing JaCoCo : Extraction couverture (ligne, branche, méthode)
+    \item Parsing Surefire : Extraction résultats tests (PASSED/FAILED/SKIPPED)
+    \item Parsing PIT : Extraction mutation score (killed/survived)
+    \item Calcul Métriques : Agrégation par classe, calcul flakiness
+    \item Validation : Vérification cohérence temporelle
+    \item Stockage TimescaleDB : Insertion séries temporelles
+    \item Fin : Confirmation traitement
+\end{enumerate}
+
+\subsubsection{Service 4 - Pretraitement Features}
+
+\insererfigure{BPMN_S4.jpg}{8cm}{Diagramme BPMN - Processus de prétraitement features (Service 4)}{fig:bpmn-s4}
+
+Le diagramme BPMN du Service 4 décrit le workflow de prétraitement avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Data Ingestion} : Lecture features depuis Feast
+    \item \textbf{Cleaning Layer} : Nettoyage et imputation
+    \item \textbf{Engineering Layer} : Construction features dérivées
+    \item \textbf{Balancing Layer} : Balancement classes (SMOTE)
+    \item \textbf{Splitting Layer} : Split temporel train/val/test
+    \item \textbf{Publication Layer} : Publication vers Feast
+\end{itemize}
+
+\textbf{Processus détaillé :}
+\begin{enumerate}
+    \item Début : Déclenchement pipeline (manuel ou automatique)
+    \item Lecture Feast : Récupération features brutes depuis Feature Store
+    \item Nettoyage : Suppression doublons, valeurs aberrantes
+    \item Imputation : Remplacement valeurs manquantes (médiane, mode)
+    \item Features Dérivées : Calcul churn, nombre auteurs, bug-fix proximity
+    \item Encodage : Encodage variables catégorielles
+    \item Balancement : Application SMOTE si déséquilibre classes
+    \item Split Temporel : Division train/val/test par date
+    \item Validation : Vérification qualité données
+    \item Publication Feast : Envoi features traitées vers Feature Store
+    \item Fin : Confirmation traitement
+\end{enumerate}
+
+\subsubsection{Service 5 - ML Service}
+
+\insererfigure{BPMN_S5.jpg}{8cm}{Diagramme BPMN - Processus ML (Service 5)}{fig:bpmn-s5}
+
+Le diagramme BPMN du Service 5 décrit le workflow Machine Learning avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Training Layer} : Entraînement modèles (XGBoost, LightGBM)
+    \item \textbf{Prediction Layer} : Service de prédiction en temps réel
+    \item \textbf{Explanation Layer} : Explicabilité avec SHAP
+    \item \textbf{Registry Layer} : Gestion modèles (MLflow)
+    \item \textbf{Storage Layer} : Stockage modèles (MinIO)
+\end{itemize}
+
+\textbf{Processus d'entraînement :}
+\begin{enumerate}
+    \item Début : Déclenchement entraînement (manuel ou automatique)
+    \item Lecture Features : Récupération depuis Feast (train set)
+    \item Préparation : Normalisation, feature selection
+    \item Entraînement XGBoost : Modèle gradient boosting
+    \item Entraînement LightGBM : Modèle alternatif
+    \item Validation : Évaluation sur validation set (AUC, F1, Precision, Recall)
+    \item Sélection Modèle : Choix meilleur modèle selon métriques
+    \item Enregistrement MLflow : Sauvegarde expérience et métriques
+    \item Stockage MinIO : Sauvegarde fichier modèle (.pkl)
+    \item Registry MLflow : Promotion modèle en production
+    \item Fin : Confirmation entraînement
+\end{enumerate}
+
+\textbf{Processus de prédiction :}
+\begin{enumerate}
+    \item Début : Requête POST /api/v1/predictions
+    \item Validation : Vérification paramètres (repository\_id, sprint\_id)
+    \item Chargement Modèle : Récupération depuis MLflow Registry ou MinIO
+    \item Préparation Features : Récupération depuis Feast, transformation
+    \item Prédiction : Calcul scores de risque par classe
+    \item Explication SHAP : Calcul contributions features
+    \item Construction Réponse : Format JSON avec scores et explications
+    \item Fin : Retour HTTP 200 OK
+\end{enumerate}
+
+\subsubsection{Service 6 - Moteur Priorisation}
+
+\insererfigure{BPMN_S6.png}{8cm}{Diagramme BPMN - Workflow de priorisation (Service 6)}{fig:bpmn-s6}
+
+Le diagramme BPMN du Service 6 décrit le workflow principal de priorisation avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{API Layer} : Réception et validation des requêtes HTTP
+    \item \textbf{ML Integration Layer} : Appel au Service S5 pour récupérer les prédictions
+    \item \textbf{Processing Layer} : Calcul de l'effort, score effort-aware, application de la criticité
+    \item \textbf{Strategy Layer} : Application des stratégies de priorisation et calcul des métriques
+    \item \textbf{Output Layer} : Construction de la réponse et sauvegarde optionnelle
+\end{itemize}
+
+\textbf{Processus détaillé :}
+\begin{enumerate}
+    \item Début : Réception requête POST /prioritize
+    \item Validation : Vérification paramètres (repository\_id, sprint\_id, strategy)
+    \item Appel S5 : Récupération prédictions ML (risk\_score, loc, complexity)
+    \item Calcul Effort : effort\_hours = (LOC / loc\_per\_hour) * complexity\_multiplier
+    \item Score Effort-Aware : effort\_aware\_score = risk\_score / effort\_hours
+    \item Criticité Module : Détection (auth, payment, etc.) et application poids
+    \item Stratégie : Application stratégie sélectionnée (maximize\_popt20, top\_k, budget, etc.)
+    \item Optimisation : OR-Tools si contraintes (budget, coverage)
+    \item Calcul Métriques : Popt@20, Recall@Top20, Coverage Gain
+    \item Construction Plan : Liste priorisée avec métadonnées
+    \item Sauvegarde (optionnel) : Stockage plan dans PostgreSQL
+    \item Fin : Retour HTTP 200 OK avec plan priorisé
+\end{enumerate}
+
+\subsubsection{Service 7 - Test Scaffolder}
+
+\insererfigure{BPMN_S7.png}{8cm}{Diagramme BPMN - Génération de tests (Service 7)}{fig:bpmn-s7}
+
+Le diagramme BPMN du Service 7 décrit le processus de génération de tests JUnit avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{API Layer} : Réception requêtes (analyse, génération, suggestions)
+    \item \textbf{Analysis Layer} : Analyse AST Java avec tree-sitter
+    \item \textbf{Generation Layer} : Génération tests JUnit et mocks Mockito
+    \item \textbf{Suggestion Layer} : Génération suggestions cas de test
+    \item \textbf{Mutation Layer} : Génération checklist mutation testing
+    \item \textbf{Storage Layer} : Sauvegarde optionnelle dans Git
+\end{itemize}
+
+\textbf{Processus détaillé :}
+\begin{enumerate}
+    \item Début : Réception requête (java\_code, options)
+    \item Validation : Vérification syntaxe Java
+    \item Analyse AST : Parsing avec tree-sitter-java
+    \item Extraction Structure : Classes, méthodes, constructeurs, champs, dépendances
+    \item Génération Test : Création squelette JUnit avec structure AAA
+    \item Génération Mocks : Création mocks Mockito pour dépendances
+    \item Suggestions : Génération suggestions (équivalence, limites, exceptions, null)
+    \item Checklist Mutation : Génération checklist opérateurs mutation
+    \item Formatage : Application template Jinja2
+    \item Sauvegarde Git (optionnel) : Commit dans branche dédiée
+    \item Fin : Retour code test généré + suggestions + checklist
+\end{enumerate}
+
+\subsubsection{Service 8 - Dashboard Qualité}
+
+% Diagramme BPMN S8 à créer
+% \insererfigure{BPMN_S8.png}{8cm}{Diagramme BPMN - Processus Dashboard (Service 8)}{fig:bpmn-s8}
+
+Le diagramme BPMN du Service 8 décrit le workflow du dashboard avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{Frontend Layer} : Interface React.js, interactions utilisateur
+    \item \textbf{API Layer} : Endpoints FastAPI backend
+    \item \textbf{Data Aggregation Layer} : Agrégation données depuis S6 et S7
+    \item \textbf{Visualization Layer} : Génération graphiques Plotly.js
+    \item \textbf{WebSocket Layer} : Communication temps réel
+    \item \textbf{Report Layer} : Génération rapports PDF/CSV
+\end{itemize}
+
+\textbf{Processus détaillé :}
+\begin{enumerate}
+    \item Début : Connexion utilisateur au dashboard
+    \item Authentification : Vérification JWT via Keycloak
+    \item Chargement Données : Requêtes API vers S6 (plans) et S7 (tests générés)
+    \item Agrégation : Fusion et traitement données
+    \item Génération Graphiques : Création graphiques Plotly.js (couverture, risques, priorités)
+    \item Affichage : Rendu interface React.js
+    \item WebSocket : Connexion pour mises à jour temps réel
+    \item Export (si demandé) : Génération rapport PDF/CSV
+    \item Fin : Session utilisateur active
+\end{enumerate}
+
+\subsubsection{Service 9 - Integrations \& Ops}
+
+\insererfigure{BPMN_S9.jpg}{8cm}{Diagramme BPMN - Processus intégrations (Service 9)}{fig:bpmn-s9}
+
+Le diagramme BPMN du Service 9 décrit le workflow des intégrations avec les swimlanes suivantes :
+\begin{itemize}
+    \item \textbf{CI/CD Layer} : Intégration pipelines GitLab CI / GitHub Actions
+    \item \textbf{PR Comment Layer} : Génération et publication commentaires PR/MR
+    \item \textbf{Auth Layer} : Gestion authentification SSO (Keycloak)
+    \item \textbf{Monitoring Layer} : Observabilité avec OpenTelemetry
+    \item \textbf{Deployment Layer} : Déploiement Docker/Kubernetes
+\end{itemize}
+
+\textbf{Processus CI/CD :}
+\begin{enumerate}
+    \item Début : Déclenchement pipeline CI/CD (push, merge request)
+    \item Build : Compilation services (Maven/Gradle, pip)
+    \item Tests : Exécution tests unitaires et d'intégration
+    \item SonarQube : Analyse qualité code
+    \item Build Docker : Création images Docker
+    \item Déploiement : Déploiement en environnement (dev/staging/prod)
+    \item Fin : Confirmation déploiement
+\end{enumerate}
+
+\textbf{Processus Commentaires PR :}
+\begin{enumerate}
+    \item Début : Événement webhook (nouveau commit, PR ouvert)
+    \item Analyse : Récupération résultats PRIORITEST pour commit
+    \item Génération Commentaire : Formatage recommandations et métriques
+    \item Publication : Post commentaire sur PR/MR (GitHub/GitLab API)
+    \item Fin : Confirmation publication
+\end{enumerate}
+
+\subsection{Cas d'utilisation}
+
+\subsubsection{Vue d'ensemble}
+
+\insererfigure{GLOBAL.png}{8cm}{Diagramme de cas d'utilisation - Vue d'ensemble PRIORITEST}{fig:use-case-global}
+
+Le diagramme de cas d'utilisation global présente les interactions entre les acteurs du système — le Développeur et le Chef de projet — et les principales fonctionnalités de PRIORITEST. Il regroupe les cas d'utilisation par domaines : collecte et analyse, prédiction ML, priorisation, génération de tests, et visualisation.
+
+\subsubsection{Service 1 - Collecte Depots}
+
+\insererfigure{useCase_S1.jpg}{8cm}{Diagramme de cas d'utilisation - Service 1 (Collecte Depots)}{fig:use-case-s1}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Collecter dépôts Git/GitHub/GitLab
+    \item Collecter issues Jira/GitHub
+    \item Collecter rapports CI/CD
+    \item Publier événements Kafka
+    \item Stocker métadonnées et artefacts
+\end{itemize}
+
+\subsubsection{Service 2 - Analyse Statique}
+
+\insererfigure{useCase_S2.jpg}{8cm}{Diagramme de cas d'utilisation - Service 2 (Analyse Statique)}{fig:use-case-s2}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Extraire métriques CK (LOC, WMC, DIT)
+    \item Calculer complexité cyclomatique
+    \item Détecter code smells (PMD)
+    \item Analyser dépendances
+    \item Publier features vers Feast
+\end{itemize}
+
+\subsubsection{Service 3 - Historique Tests}
+
+\insererfigure{useCase_S3.jpg}{8cm}{Diagramme de cas d'utilisation - Service 3 (Historique Tests)}{fig:use-case-s3}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Parser rapports JaCoCo (couverture)
+    \item Parser rapports Surefire (résultats)
+    \item Parser rapports PIT (mutation)
+    \item Stocker séries temporelles
+    \item Calculer métriques de flakiness
+\end{itemize}
+
+\subsubsection{Service 4 - Pretraitement Features}
+
+\insererfigure{useCase_S4.jpg}{8cm}{Diagramme de cas d'utilisation - Service 4 (Pretraitement Features)}{fig:use-case-s4}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Nettoyer et imputer les données
+    \item Construire features dérivées (churn, auteurs)
+    \item Balancer les classes (SMOTE)
+    \item Split temporel train/val/test
+    \item Publier vers Feast
+\end{itemize}
+
+\subsubsection{Service 5 - ML Service}
+
+\insererfigure{useCase_S5.jpg}{8cm}{Diagramme de cas d'utilisation - Service 5 (ML Service)}{fig:use-case-s5}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Entraîner modèles (XGBoost, LightGBM)
+    \item Faire des prédictions de risque
+    \item Expliquer avec SHAP
+    \item Gérer modèles (MLflow)
+    \item Stocker modèles (MinIO)
+\end{itemize}
+
+\subsubsection{Service 6 - Moteur Priorisation}
+
+\insererfigure{useCase_S6.png}{8cm}{Diagramme de cas d'utilisation - Service 6 (Moteur Priorisation)}{fig:use-case-s6}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Prioriser classes à tester
+    \item Calculer effort (LOC, complexité)
+    \item Appliquer criticité modules
+    \item Optimiser sous contraintes (OR-Tools)
+    \item Calculer métriques (Popt@20, Recall@Top20)
+    \item Gérer politiques de priorisation
+\end{itemize}
+
+\subsubsection{Service 7 - Test Scaffolder}
+
+\insererfigure{useCase_S7.png}{8cm}{Diagramme de cas d'utilisation - Service 7 (Test Scaffolder)}{fig:use-case-s7}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Analyser classe Java (AST)
+    \item Générer squelette test JUnit
+    \item Générer mocks Mockito
+    \item Suggérer cas de test
+    \item Générer checklist mutation testing
+    \item Sauvegarder dans Git
+\end{itemize}
+
+\subsubsection{Service 8 - Dashboard Qualité}
+
+% Diagramme de cas d'utilisation S8 à créer
+% \insererfigure{useCase_S8.png}{8cm}{Diagramme de cas d'utilisation - Service 8 (Dashboard Qualité)}{fig:use-case-s8}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Consulter dashboard
+    \item Visualiser plans de priorisation
+    \item Afficher couverture de tests
+    \item Afficher métriques de risque
+    \item Exporter rapports PDF/CSV
+    \item Recevoir mises à jour temps réel
+\end{itemize}
+
+\subsubsection{Service 9 - Integrations \& Ops}
+
+\insererfigure{useCase_S9.jpg}{8cm}{Diagramme de cas d'utilisation - Service 9 (Integrations \& Ops)}{fig:use-case-s9}
+
+Cas d'utilisation principaux :
+\begin{itemize}
+    \item Intégrer CI/CD
+    \item Commenter automatiquement PR/MR
+    \item Gérer authentification SSO (Keycloak)
+    \item Monitorer avec OpenTelemetry
+    \item Déployer avec Docker/Kubernetes
+\end{itemize}
+
+\textbf{Cas d'utilisation principaux :}
+
+\begin{itemize}
+    \item \textbf{Collecte} : Ingérer dépôts Git, parser rapports CI/CD, collecter issues.
+    \item \textbf{Analyse} : Extraire métriques de code, analyser historique de tests.
+    \item \textbf{Prédiction} : Obtenir score de risque, explications SHAP.
+    \item \textbf{Priorisation} : Prioriser classes à tester, optimiser sous contraintes.
+    \item \textbf{Génération} : Générer tests JUnit, suggérer cas de test.
+    \item \textbf{Visualisation} : Consulter dashboard, exporter rapports.
+\end{itemize}
+
+\subsection{Diagramme de classes}
+
+Les diagrammes de classes décrivent l'architecture statique de chaque microservice en définissant les principales entités métier, leurs attributs et leurs relations.
+
+\subsubsection{Service 1 - Collecte Depots}
+
+% Diagramme de classes S1 à créer
+% \insererfigure{class_S1.jpg}{8cm}{Diagramme de classes - Service 1 (Collecte Depots)}{fig:class-s1}
+
+Le diagramme de classes du Service 1 montre l'architecture de collecte avec les composants suivants :
+\begin{itemize}
+    \item \texttt{RepositoryCollector} : Collecte des dépôts Git/GitHub/GitLab
+    \item \texttt{IssueCollector} : Collecte des issues Jira/GitHub
+    \item \texttt{CIReportCollector} : Collecte des rapports CI/CD
+    \item \texttt{KafkaProducer} : Publication d'événements Kafka
+    \item \texttt{MetadataService} : Gestion des métadonnées (PostgreSQL)
+    \item \texttt{ArtifactStorage} : Stockage des artefacts (MinIO)
+    \item Modèles de données : \texttt{Repository}, \texttt{Issue}, \texttt{CIReport}
+\end{itemize}
+
+\subsubsection{Service 2 - Analyse Statique}
+
+% Diagramme de classes S2 à créer
+% \insererfigure{class_S2.jpg}{8cm}{Diagramme de classes - Service 2 (Analyse Statique)}{fig:class-s2}
+
+Le diagramme de classes du Service 2 illustre l'extraction de métriques :
+\begin{itemize}
+    \item \texttt{CodeAnalyzer} : Analyse du code source (JavaParser)
+    \item \texttt{CKMetricsExtractor} : Extraction métriques CK (LOC, WMC, DIT)
+    \item \texttt{ComplexityCalculator} : Calcul complexité cyclomatique
+    \item \texttt{SmellDetector} : Détection code smells (PMD)
+    \item \texttt{FeaturePublisher} : Publication vers Feast Feature Store
+    \item Modèles de données : \texttt{ClassMetrics}, \texttt{MethodMetrics}, \texttt{Smell}
+\end{itemize}
+
+\subsubsection{Service 3 - Historique Tests}
+
+\insererfigure{class_S3.jpg}{8cm}{Diagramme de classes - Service 3 (Historique Tests)}{fig:class-s3}
+
+Le diagramme de classes du Service 3 montre l'agrégation des résultats de tests :
+\begin{itemize}
+    \item \texttt{JaCoCoParser} : Parsing rapports JaCoCo (couverture)
+    \item \texttt{SurefireParser} : Parsing rapports Surefire (résultats)
+    \item \texttt{PITParser} : Parsing rapports PIT (mutation)
+    \item \texttt{TestHistoryService} : Gestion historique (TimescaleDB)
+    \item \texttt{FlakinessCalculator} : Calcul métriques de flakiness
+    \item Modèles de données : \texttt{CoverageReport}, \texttt{TestResult}, \texttt{MutationScore}
+\end{itemize}
+
+\subsubsection{Service 4 - Pretraitement Features}
+
+\insererfigure{class_S4.jpg}{8cm}{Diagramme de classes - Service 4 (Pretraitement Features)}{fig:class-s4}
+
+Le diagramme de classes du Service 4 illustre le pipeline de prétraitement :
+\begin{itemize}
+    \item \texttt{DataCleaner} : Nettoyage et imputation des données
+    \item \texttt{FeatureEngineer} : Construction features dérivées (churn, auteurs)
+    \item \texttt{ClassBalancer} : Balancement avec SMOTE
+    \item \texttt{DataSplitter} : Split temporel train/val/test
+    \item \texttt{FeaturePublisher} : Publication vers Feast
+    \item Modèles de données : \texttt{ProcessedFeatures}, \texttt{FeatureSet}
+\end{itemize}
+
+\subsubsection{Service 5 - ML Service}
+
+\insererfigure{class_S5.jpg}{8cm}{Diagramme de classes - Service 5 (ML Service)}{fig:class-s5}
+
+Le diagramme de classes du Service 5 montre l'architecture ML :
+\begin{itemize}
+    \item \texttt{ModelTrainer} : Entraînement modèles (XGBoost, LightGBM)
+    \item \texttt{PredictionService} : Service de prédiction
+    \item \texttt{SHAPExplainer} : Explicabilité avec SHAP
+    \item \texttt{MLflowClient} : Gestion expériences et registry (MLflow)
+    \item \texttt{ModelStorage} : Stockage modèles (MinIO)
+    \item Modèles de données : \texttt{Prediction}, \texttt{ModelVersion}, \texttt{SHAPExplanation}
+\end{itemize}
+
+\subsubsection{Service 6 - Moteur Priorisation}
+
+\insererfigure{class_S6.png}{8cm}{Diagramme de classes - Service 6 (Moteur Priorisation)}{fig:class-s6}
+
+Le diagramme de classes du Service 6 montre l'architecture de priorisation :
+\begin{itemize}
+    \item \texttt{PrioritizationRouter} : Gestion des endpoints FastAPI
+    \item \texttt{EffortCalculator} : Calcul de l'effort par classe
+    \item \texttt{CriticalityService} : Gestion de la criticité des modules
+    \item \texttt{OptimizationService} : Optimisation avec OR-Tools
+    \item \texttt{PrioritizationStrategies} : Stratégies de priorisation
+    \item \texttt{MLServiceClient} : Client HTTP pour S5
+    \item \texttt{MetricsService} : Calcul des métriques (Popt@20, Recall@Top20)
+    \item \texttt{PolicyService} : Gestion des politiques
+    \item Modèles de données : \texttt{Policy}, \texttt{PrioritizationPlan}, \texttt{PrioritizedClass}
+\end{itemize}
+
+\subsubsection{Service 7 - Test Scaffolder}
+
+\insererfigure{class_S7.png}{8cm}{Diagramme de classes - Service 7 (Test Scaffolder)}{fig:class-s7}
+
+Le diagramme de classes du Service 7 illustre la génération de tests :
+\begin{itemize}
+    \item \texttt{ScaffoldRouter} : Gestion des endpoints FastAPI
+    \item \texttt{ASTAnalyzer} : Analyse AST Java (tree-sitter)
+    \item \texttt{TestGenerator} : Génération de tests JUnit
+    \item \texttt{MockGenerator} : Génération de mocks Mockito
+    \item \texttt{TestSuggestionsService} : Suggestions de cas de test
+    \item \texttt{MutationChecklistService} : Checklist de mutation testing
+    \item \texttt{GitStorageService} : Sauvegarde dans Git
+    \item Modèles de données : \texttt{ClassAnalysis}, \texttt{MethodInfo}, \texttt{TestSuggestion}, \texttt{ClassMutationChecklist}
+\end{itemize}
+
+\subsubsection{Service 8 - Dashboard Qualité}
+
+% Diagramme de classes S8 à créer
+% \insererfigure{class_S8.png}{8cm}{Diagramme de classes - Service 8 (Dashboard Qualité)}{fig:class-s8}
+
+Le diagramme de classes du Service 8 montre l'architecture frontend/backend :
+\begin{itemize}
+    \item \textbf{Frontend (React.js)} :
+    \begin{itemize}
+        \item \texttt{DashboardComponent} : Composant principal
+        \item \texttt{PrioritizationView} : Visualisation plans de priorisation
+        \item \texttt{CoverageCharts} : Graphiques de couverture (Plotly.js)
+        \item \texttt{MetricsView} : Affichage métriques
+        \item \texttt{WebSocketClient} : Communication temps réel
+    \end{itemize}
+    \item \textbf{Backend (FastAPI)} :
+    \begin{itemize}
+        \item \texttt{DashboardRouter} : Endpoints API
+        \item \texttt{DataAggregator} : Agrégation données S6/S7
+        \item \texttt{ReportGenerator} : Génération rapports PDF/CSV
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Service 9 - Integrations \& Ops}
+
+\insererfigure{class_S9.jpg}{8cm}{Diagramme de classes - Service 9 (Integrations \& Ops)}{fig:class-s9}
+
+Le diagramme de classes du Service 9 illustre les intégrations :
+\begin{itemize}
+    \item \texttt{CICDIntegration} : Intégration CI/CD (GitLab CI, GitHub Actions)
+    \item \texttt{PRCommentService} : Commentaires automatiques PR/MR
+    \item \texttt{AuthService} : Intégration Keycloak (SSO)
+    \item \texttt{MonitoringService} : Observabilité (OpenTelemetry)
+    \item \texttt{DeploymentService} : Déploiement Docker/Kubernetes
+    \item Modèles de données : \texttt{PRComment}, \texttt{DeploymentConfig}
+\end{itemize}
+
+\textbf{Note :} Les diagrammes de classes doivent être créés pour chaque service en utilisant PlantUML, Draw.io ou un outil de modélisation UML.
+
+\subsection{Flux de données principaux}
+
+\begin{enumerate}
+    \item \textbf{Réception de la requête} : POST \texttt{/prioritize} avec repository\_id, sprint\_id, strategy
+    \item \textbf{Validation} : Vérification des paramètres (Pydantic)
+    \item \textbf{Appel ML Service} : Récupération des prédictions depuis S5
+    \item \textbf{Calcul de l'effort} : effort\_hours = (LOC / loc\_per\_hour) * complexity\_multiplier
+    \item \textbf{Score effort-aware} : effort\_aware\_score = risk\_score / effort\_hours
+    \item \textbf{Application criticité} : Détection module (auth, payment, etc.) et application de poids
+    \item \textbf{Stratégie de priorisation} : Application de la stratégie sélectionnée (maximize\_popt20, top\_k\_coverage, budget\_optimization, etc.)
+    \item \textbf{Calcul métriques} : Popt@20, Recall@Top20, Coverage Gain
+    \item \textbf{Construction réponse} : Plan priorisé avec métriques
+    \item \textbf{Retour HTTP 200 OK} : JSON avec plan et métriques
+\end{enumerate}
+
+\begin{enumerate}
+    \item \textbf{Pipeline de Collecte} : GitHub/GitLab/Jira $\rightarrow$ S1 $\rightarrow$ Kafka $\rightarrow$ S2 $\rightarrow$ Feast
+    \item \textbf{Pipeline ML} : Feast $\rightarrow$ S4 $\rightarrow$ Feast $\rightarrow$ S5 $\rightarrow$ MLflow + MinIO
+    \item \textbf{Pipeline de Priorisation} : S5 $\rightarrow$ S6 $\rightarrow$ S7 $\rightarrow$ S8
+    \item \textbf{Pipeline Visualisation} : S6 + S7 $\rightarrow$ S8 $\rightarrow$ Grafana
+    \item \textbf{Pipeline Intégrations} : S9 $\rightarrow$ GitHub/GitLab (PR Comments), Keycloak (Auth)
+\end{enumerate}
+
+% Diagramme de flux de données à créer
+% \insererfigure{diagrams/flux_donnees.png}{8cm}{Schéma des flux de données principaux}{fig:flux-donnees}
+
+%----------------------------------------------------------
+
+\subsection{Collecte et Analyse}
+
+\begin{itemize}
+    \item \textbf{Ingestion automatique} : Dépôts Git/GitHub/GitLab, issues Jira, rapports CI/CD
+    \item \textbf{Extraction métriques} : LOC, complexité cyclomatique, métriques CK (WMC, DIT), code smells (PMD)
+    \item \textbf{Historique tests} : Parsing JaCoCo (couverture), Surefire (résultats), PIT (mutation)
+    \item \textbf{Stockage} : PostgreSQL (métadonnées), TimescaleDB (séries temporelles), MinIO (artefacts)
+\end{itemize}
+
+\subsection{Prédiction Machine Learning}
+
+\begin{itemize}
+    \item \textbf{Modèles pré-entraînés} : XGBoost, LightGBM pour prédiction de risque de défaut
+    \item \textbf{Features} : Métriques de code, historique de tests, churn, auteurs, bug-fix proximity
+    \item \textbf{Explicabilité} : SHAP pour identifier les facteurs clés contribuant au risque
+    \item \textbf{MLOps} : MLflow pour gestion des expériences et registry de modèles
+\end{itemize}
+
+\subsection{Priorisation Effort-Aware}
+
+\begin{itemize}
+    \item \textbf{Calcul de l'effort} : Intégration LOC, complexité, temps estimé
+    \item \textbf{Criticité des modules} : Détection automatique (auth, payment, etc.) avec poids
+    \item \textbf{Optimisation sous contraintes} : OR-Tools (SCIP) pour optimisation ILP
+    \item \textbf{Stratégies multiples} : maximize\_popt20, top\_k\_coverage, budget\_optimization, coverage\_optimization, multi\_objective
+    \item \textbf{Métriques} : Popt@20, Recall@Top20, Coverage Gain estimé
+\end{itemize}
+
+\subsection{Génération de Tests}
+
+\begin{itemize}
+    \item \textbf{Analyse AST} : Parsing Java avec tree-sitter-java
+    \item \textbf{Génération JUnit} : Squelettes de tests avec structure Arrange-Act-Assert
+    \item \textbf{Mocks Mockito} : Génération automatique de mocks
+    \item \textbf{Suggestions} : Cas de test d'équivalence, limites, exceptions, null, collections
+    \item \textbf{Mutation checklist} : Checklist pour améliorer le mutation score
+    \item \textbf{Sauvegarde Git} : Option de sauvegarde automatique dans le dépôt
+\end{itemize}
+
+\subsection{Visualisation et Rapports}
+
+\begin{itemize}
+    \item \textbf{Dashboard React.js} : Interface moderne avec graphiques Plotly.js
+    \item \textbf{Temps réel} : WebSockets pour mises à jour en direct
+    \item \textbf{Visualisations} : Plans de priorisation, couverture, risques, métriques
+    \item \textbf{Export} : Rapports PDF/CSV, export des plans
+    \item \textbf{Monitoring} : Intégration Grafana pour métriques système
+\end{itemize}
+
+\subsection{Intégrations CI/CD}
+
+\begin{itemize}
+    \item \textbf{CI/CD} : GitLab CI, GitHub Actions
+    \item \textbf{Commentaires PR} : Commentaires automatiques sur les Pull Requests
+    \item \textbf{Authentification SSO} : Keycloak pour authentification centralisée
+    \item \textbf{Observabilité} : OpenTelemetry pour tracing et monitoring
+\end{itemize}
+
+%----------------------------------------------------------
+
+\section{Maquettes UI/UX réalisées avec Figma}
+
+\subsection{Maquettes Figma - Dashboard Qualité (S8)}
+
+Les maquettes UI/UX ont été réalisées avec Figma pour le Service S8 (Dashboard Qualité). Elles présentent l'interface utilisateur pour visualiser les recommandations, la couverture de tests, et les métriques de risque.
+
+\subsubsection{Page d'accueil - Dashboard}
+
+\insererfigure{Maq1.jpg}{8cm}{Page d'accueil - Vue d'ensemble du dashboard}{fig:maquette-dashboard}
+
+\subsubsection{Visualisation des plans de priorisation}
+
+\insererfigure{Maq2.jpg}{8cm}{Interface de visualisation des plans de priorisation}{fig:maquette-priorisation}
+
+\subsubsection{Détails d'une classe}
+
+\insererfigure{Maq3.jpg}{8cm}{Page de détails d'une classe avec métriques}{fig:maquette-class-details}
+
+\subsubsection{Graphiques de couverture}
+
+\insererfigure{Maq4.jpg}{8cm}{Graphiques de couverture de tests (ligne, branche)}{fig:maquette-coverage}
+
+%----------------------------------------------------------
+
+\end{document}
+

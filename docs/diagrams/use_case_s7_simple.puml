@@ -1,0 +1,39 @@
+@startuml Use Case Diagram - Service 7 (Simplifié)
+
+left to right direction
+
+' Acteurs
+actor "Développeur" as Dev
+actor "CI/CD" as CICD
+actor "Git" as Git
+
+' Service 7
+rectangle "S7 - Test Scaffolder" {
+  
+  usecase "Analyser classe Java" as UC1
+  usecase "Générer test JUnit" as UC2
+  usecase "Générer mocks" as UC3
+  usecase "Suggérer cas de test" as UC4
+  usecase "Générer checklist mutation" as UC5
+  usecase "Sauvegarder dans Git" as UC6
+}
+
+' Relations
+Dev --> UC1
+Dev --> UC2
+Dev --> UC4
+Dev --> UC5
+CICD --> UC2
+Git --> UC6 : stocke
+
+UC2 ..> UC1 : <<include>>
+UC2 ..> UC3 : <<include>>
+UC4 ..> UC1 : <<include>>
+UC5 ..> UC1 : <<include>>
+UC6 ..> UC2 : <<include>>
+
+@enduml
+
+
+
+

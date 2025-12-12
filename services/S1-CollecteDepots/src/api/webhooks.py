@@ -51,6 +51,26 @@ async def github_webhook(
     """
     Handle GitHub webhooks.
     
+    Input format (from architecture spec):
+    {
+      "event_type": "push|pull_request|issue",
+      "repository": {
+        "id": "12345",
+        "name": "my-repo",
+        "full_name": "org/my-repo",
+        "url": "https://github.com/org/my-repo"
+      },
+      "commit": {
+        "sha": "abc123",
+        "message": "Fix bug in UserService",
+        "author": "developer@example.com",
+        "timestamp": "2025-12-04T10:30:00Z",
+        "files": [
+          {"path": "src/UserService.java", "status": "modified"}
+        ]
+      }
+    }
+    
     Supported events:
     - push: Commit events
     - pull_request: Pull request events

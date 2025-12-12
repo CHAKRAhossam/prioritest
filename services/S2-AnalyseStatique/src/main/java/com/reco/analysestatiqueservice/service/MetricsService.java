@@ -309,6 +309,7 @@ public class MetricsService {
     
     /**
      * Builds CodeMetricsEvent from ClassMetrics.
+     * Aligned with architecture specification format.
      */
     private CodeMetricsEvent buildCodeMetricsEvent(
             CommitEvent commitEvent, 
@@ -316,7 +317,9 @@ public class MetricsService {
             List<SmellResult> smells) {
         
         CodeMetricsEvent event = new CodeMetricsEvent();
-        event.setEventId(commitEvent.getEventId());
+        // Generate unique event ID for metrics event (different from commit event)
+        event.setEventId("evt_" + System.currentTimeMillis() + "_" + classMetrics.getClassName().hashCode());
+        event.setTimestamp(java.time.Instant.now().toString()); // ISO-8601 format
         event.setRepositoryId(commitEvent.getRepositoryId());
         event.setCommitSha(commitEvent.getCommitSha());
         event.setClassName(classMetrics.getClassName());
