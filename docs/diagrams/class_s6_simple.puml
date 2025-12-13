@@ -1,0 +1,96 @@
+@startuml Class Diagram - Service 6 (Simplifié)
+
+package "S6 - Moteur Priorisation" {
+  
+  ' API
+  class PrioritizationRouter {
+    + prioritize()
+    + get_plan()
+  }
+  
+  ' Models
+  class PrioritizationRequest {
+    + repository_id
+    + sprint_id
+    + constraints
+  }
+  
+  class PrioritizationResponse {
+    + prioritized_plan
+    + metrics
+  }
+  
+  class PrioritizedClass {
+    + class_name
+    + priority
+    + risk_score
+    + effort_hours
+    + effort_aware_score
+  }
+  
+  ' Services
+  class EffortCalculator {
+    + calculate_effort()
+    + calculate_effort_aware_score()
+  }
+  
+  class CriticalityService {
+    + detect_module_criticality()
+    + apply_criticality_weight()
+  }
+  
+  class OptimizationService {
+    + optimize_with_constraints()
+    + solve_with_ortools()
+  }
+  
+  class PrioritizationStrategies {
+    + maximize_popt20()
+    + budget_optimization()
+    + coverage_optimization()
+  }
+  
+  class MLServiceClient {
+    + get_predictions()
+  }
+  
+  class MetricsService {
+    + calculate_popt20()
+    + calculate_recall_top20()
+  }
+  
+  ' Database
+  class Policy {
+    + id
+    + name
+    + strategy
+    + constraints
+  }
+  
+  class PrioritizationPlan {
+    + id
+    + repository_id
+    + prioritized_classes
+    + metrics
+  }
+  
+  ' Relations
+  PrioritizationRouter --> PrioritizationRequest
+  PrioritizationRouter --> PrioritizationResponse
+  PrioritizationRouter --> EffortCalculator
+  PrioritizationRouter --> CriticalityService
+  PrioritizationRouter --> OptimizationService
+  PrioritizationRouter --> PrioritizationStrategies
+  PrioritizationRouter --> MLServiceClient
+  PrioritizationRouter --> MetricsService
+  
+  PrioritizationResponse --> PrioritizedClass
+  PrioritizationStrategies --> OptimizationService
+  PrioritizationPlan --> Policy
+}
+
+@enduml
+
+
+
+

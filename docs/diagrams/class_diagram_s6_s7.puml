@@ -1,0 +1,398 @@
+@startuml Class Diagram - Service 6 & Service 7
+
+!define RECTANGLE class
+
+' ==========================================
+' SERVICE 6 - MOTEUR DE PRIORISATION
+' ==========================================
+
+package "S6 - Moteur de Priorisation" {
+  
+  ' API Layer
+  class PrioritizationRouter {
+    + prioritize(request: PrioritizationRequest): PrioritizationResponse
+    + get_prioritization_plan(plan_id: str): PrioritizationPlan
+  }
+  
+  ' Models (Pydantic)
+  class PrioritizationRequest {
+    + repository_id: str
+    + sprint_id: Optional[str]
+    + constraints: Optional[Dict]
+  }
+  
+  class PrioritizationResponse {
+    + prioritized_plan: List[PrioritizedClass]
+    + metrics: PrioritizationMetrics
+  }
+  
+  class PrioritizedClass {
+    + class_name: str
+    + priority: int
+    + risk_score: float
+    + effort_hours: float
+    + effort_aware_score: float
+    + module_criticality: str
+    + strategy: str
+    + reason: str
+  }
+  
+  class PrioritizationMetrics {
+    + total_effort_hours: float
+    + estimated_coverage_gain: float
+    + popt20_score: Optional[float]
+    + recall_top20: Optional[float]
+  }
+  
+  ' Services
+  class EffortCalculator {
+    + calculate_for_classes(predictions: List): List[Dict]
+    + calculate_effort(loc: int, complexity: float): float
+    + calculate_effort_aware_score(risk: float, effort: float): float
+  }
+  
+  class CriticalityService {
+    + enrich_with_criticality(classes: List): List[Dict]
+    + detect_module_criticality(module_name: str): str
+    + apply_criticality_weight(risk_score: float, criticality: str): float
+  }
+  
+  class OptimizationService {
+    + optimize_with_constraints(classes: List, constraints: Dict): List[Dict]
+    + solve_with_ortools(classes: List, constraints: Dict): List[Dict]
+    + greedy_fallback(classes: List, constraints: Dict): List[Dict]
+  }
+  
+  class PrioritizationStrategies {
+    + maximize_popt20(classes: List): List[Dict]
+    + top_k_coverage(classes: List, k: int): List[Dict]
+    + budget_optimization(classes: List, budget: float): List[Dict]
+    + coverage_optimization(classes: List, target: float): List[Dict]
+    + multi_objective(classes: List, constraints: Dict): List[Dict]
+  }
+  
+  class MLServiceClient {
+    + get_predictions(repository_id: str, sprint_id: str): List[Dict]
+    + _call_ml_service(url: str, params: Dict): List[Dict]
+  }
+  
+  class MetricsService {
+    + calculate_metrics(prioritized_plan: List, baseline: List): PrioritizationMetrics
+    + calculate_popt20(plan: List): float
+    + calculate_recall_top20(plan: List): float
+    + calculate_coverage_gain(plan: List): float
+  }
+  
+  class PolicyService {
+    + create_policy(policy_data: Dict): Policy
+    + get_policy(policy_id: str): Policy
+    + update_policy(policy_id: str, updates: Dict): Policy
+    + delete_policy(policy_id: str): bool
+    + save_plan(plan_data: Dict): PrioritizationPlan
+    + get_plan(plan_id: str): PrioritizationPlan
+  }
+  
+  ' Database Models (SQLAlchemy)
+  class Policy {
+    + id: str
+    + name: str
+    + description: str
+    + strategy: str
+    + constraints: JSON
+    + effort_config: JSON
+    + criticality_config: JSON
+    + created_at: DateTime
+    + updated_at: DateTime
+    + is_active: int
+  }
+  
+  class PrioritizationPlan {
+    + id: str
+    + repository_id: str
+    + sprint_id: str
+    + policy_id: str
+    + strategy: str
+    + prioritized_classes: JSON
+    + total_effort_hours: float
+    + estimated_coverage_gain: float
+    + popt20_score: float
+    + recall_top20: float
+    + created_at: DateTime
+  }
+  
+  ' Relationships
+  PrioritizationRouter --> PrioritizationRequest
+  PrioritizationRouter --> PrioritizationResponse
+  PrioritizationRouter --> EffortCalculator
+  PrioritizationRouter --> CriticalityService
+  PrioritizationRouter --> PrioritizationStrategies
+  PrioritizationRouter --> MLServiceClient
+  PrioritizationRouter --> MetricsService
+  PrioritizationRouter --> PolicyService
+  
+  PrioritizationResponse --> PrioritizedClass
+  PrioritizationResponse --> PrioritizationMetrics
+  
+  EffortCalculator ..> PrioritizedClass : creates
+  CriticalityService ..> PrioritizedClass : enriches
+  PrioritizationStrategies --> OptimizationService
+  MetricsService ..> PrioritizationMetrics : creates
+  PolicyService --> Policy
+  PolicyService --> PrioritizationPlan
+  Policy "1" --> "*" PrioritizationPlan : has
+  
+}
+
+' ==========================================
+' SERVICE 7 - TEST SCAFFOLDER
+' ==========================================
+
+package "S7 - Test Scaffolder" {
+  
+  ' API Layer
+  class ScaffoldRouter {
+    + analyze_class(request: AnalyzeClassRequest): AnalyzeClassResponse
+    + generate_test(request: GenerateTestRequest): GenerateTestResponse
+    + suggest_test_cases(request: SuggestTestCasesRequest): ClassSuggestions
+    + mutation_checklist(request: MutationChecklistRequest): ClassMutationChecklist
+    + save_suggestions(request: SaveSuggestionsRequest): SaveSuggestionsResponse
+    + generate_complete(request: CompleteGenerationRequest): CompleteGenerationResponse
+  }
+  
+  ' Models (Pydantic)
+  class AnalyzeClassRequest {
+    + java_code: str
+    + file_path: Optional[str]
+  }
+  
+  class AnalyzeClassResponse {
+    + analysis: ClassAnalysis
+  }
+  
+  class GenerateTestRequest {
+    + java_code: str
+    + test_package: Optional[str]
+    + test_class_suffix: str
+    + file_path: Optional[str]
+  }
+  
+  class GenerateTestResponse {
+    + test_code: str
+    + test_class_name: str
+    + test_package: str
+    + analysis: ClassAnalysis
+  }
+  
+  class CompleteGenerationRequest {
+    + java_code: str
+    + file_path: Optional[str]
+    + test_package: Optional[str]
+    + test_class_suffix: str
+    + include_suggestions: bool
+    + include_mutation_checklist: bool
+    + include_private: bool
+    + save_to_git: bool
+    + git_branch: Optional[str]
+    + git_commit_message: Optional[str]
+    + git_push: bool
+  }
+  
+  class CompleteGenerationResponse {
+    + success: bool
+    + analysis: ClassAnalysis
+    + test_code: str
+    + test_class_name: str
+    + test_package: str
+    + suggestions: Optional[ClassSuggestions]
+    + mutation_checklist: Optional[ClassMutationChecklist]
+    + git_storage: Optional[Dict]
+    + summary: Dict
+  }
+  
+  class ClassAnalysis {
+    + class_name: str
+    + package_name: Optional[str]
+    + full_qualified_name: str
+    + is_abstract: bool
+    + is_interface: bool
+    + is_enum: bool
+    + extends: Optional[str]
+    + implements: List[str]
+    + methods: List[MethodInfo]
+    + constructors: List[ConstructorInfo]
+    + fields: List[FieldInfo]
+    + imports: List[str]
+    + annotations: List[str]
+    + dependencies: List[str]
+  }
+  
+  class MethodInfo {
+    + name: str
+    + return_type: Optional[str]
+    + parameters: List[MethodParameter]
+    + is_public: bool
+    + is_static: bool
+    + is_void: bool
+    + throws_exceptions: List[str]
+    + annotations: List[str]
+  }
+  
+  class MethodParameter {
+    + name: str
+    + type: str
+    + is_primitive: bool
+    + is_collection: bool
+  }
+  
+  class FieldInfo {
+    + name: str
+    + type: str
+    + is_public: bool
+    + is_private: bool
+    + is_final: bool
+    + is_static: bool
+    + annotations: List[str]
+  }
+  
+  class ConstructorInfo {
+    + parameters: List[MethodParameter]
+    + is_public: bool
+    + annotations: List[str]
+  }
+  
+  class ClassSuggestions {
+    + class_name: str
+    + method_suggestions: List[MethodSuggestions]
+    + total_suggestions: int
+    + coverage_estimate: float
+  }
+  
+  class MethodSuggestions {
+    + method_name: str
+    + suggestions: List[TestSuggestion]
+    + estimated_coverage_gain: float
+  }
+  
+  class TestSuggestion {
+    + type: TestCaseType
+    + description: str
+    + example_values: Dict[str, str]
+    + expected_outcome: str
+    + assertion_suggestion: str
+  }
+  
+  class ClassMutationChecklist {
+    + class_name: str
+    + method_checklists: List[MethodMutationChecklist]
+    + total_items: int
+    + estimated_mutation_score: float
+  }
+  
+  class MethodMutationChecklist {
+    + method_name: str
+    + items: List[MutationChecklistItem]
+    + estimated_mutation_score_impact: float
+  }
+  
+  class MutationChecklistItem {
+    + operator: MutationOperator
+    + description: str
+    + test_suggestion: str
+    + is_covered: bool
+  }
+  
+  ' Services
+  class ASTAnalyzer {
+    + analyze_class(java_code: str, file_path: str): Optional[Dict]
+    + _parse_basic(java_code: str, file_path: str): Dict
+    + _parse_parameters_from_string(params_str: str): List[Dict]
+  }
+  
+  class TestGenerator {
+    + generate_test_class(class_analysis: ClassAnalysis, test_package: str, test_class_suffix: str): str
+    + _prepare_test_methods(methods: List[MethodInfo], class_instance_name: str): List[Dict]
+    + _prepare_test_imports(class_analysis: ClassAnalysis): List[str]
+  }
+  
+  class MockGenerator {
+    + extract_mock_fields(fields: List[FieldInfo]): List[Dict]
+    + generate_mock_configurations(method: MethodInfo, class_analysis: ClassAnalysis, mock_fields: List[Dict]): List[str]
+  }
+  
+  class TestSuggestionsService {
+    + generate_suggestions(class_analysis: ClassAnalysis, include_private: bool): ClassSuggestions
+    + _generate_suggestions_for_method(method: MethodInfo): MethodSuggestions
+    + _suggest_equivalence_cases(method: MethodInfo): List[TestSuggestion]
+    + _suggest_limit_cases(method: MethodInfo): List[TestSuggestion]
+    + _suggest_exception_cases(method: MethodInfo): List[TestSuggestion]
+  }
+  
+  class MutationChecklistService {
+    + generate_checklist(class_analysis: ClassAnalysis, include_private: bool): ClassMutationChecklist
+    + _generate_checklist_for_method(method: MethodInfo): MethodMutationChecklist
+    + _get_mutation_operators_for_method(method: MethodInfo): List[MutationOperator]
+  }
+  
+  class GitStorageService {
+    + save_test_file(test_code: str, class_name: str, test_class_name: str, test_package: str, branch: str, commit_message: str): Dict
+    + save_suggestions_file(suggestions: Dict, class_name: str, branch: str, commit_message: str): Dict
+    + _clone_or_pull_repo(repo_url: str, repo_path: Path): Repository
+    + _checkout_or_create_branch(repo: Repository, branch_name: str): None
+    + push_changes(branch: str): None
+  }
+  
+  ' Relationships
+  ScaffoldRouter --> AnalyzeClassRequest
+  ScaffoldRouter --> AnalyzeClassResponse
+  ScaffoldRouter --> GenerateTestRequest
+  ScaffoldRouter --> GenerateTestResponse
+  ScaffoldRouter --> CompleteGenerationRequest
+  ScaffoldRouter --> CompleteGenerationResponse
+  ScaffoldRouter --> ASTAnalyzer
+  ScaffoldRouter --> TestGenerator
+  ScaffoldRouter --> TestSuggestionsService
+  ScaffoldRouter --> MutationChecklistService
+  ScaffoldRouter --> GitStorageService
+  
+  AnalyzeClassResponse --> ClassAnalysis
+  GenerateTestResponse --> ClassAnalysis
+  CompleteGenerationResponse --> ClassAnalysis
+  CompleteGenerationResponse --> ClassSuggestions
+  CompleteGenerationResponse --> ClassMutationChecklist
+  
+  ClassAnalysis "1" --> "*" MethodInfo : contains
+  ClassAnalysis "1" --> "*" ConstructorInfo : contains
+  ClassAnalysis "1" --> "*" FieldInfo : contains
+  MethodInfo "1" --> "*" MethodParameter : has
+  ConstructorInfo "1" --> "*" MethodParameter : has
+  
+  ClassSuggestions "1" --> "*" MethodSuggestions : contains
+  MethodSuggestions "1" --> "*" TestSuggestion : contains
+  
+  ClassMutationChecklist "1" --> "*" MethodMutationChecklist : contains
+  MethodMutationChecklist "1" --> "*" MutationChecklistItem : contains
+  
+  ASTAnalyzer ..> ClassAnalysis : creates
+  TestGenerator --> ClassAnalysis : uses
+  TestGenerator --> MockGenerator : uses
+  TestSuggestionsService --> ClassAnalysis : uses
+  MutationChecklistService --> ClassAnalysis : uses
+  GitStorageService --> TestGenerator : saves output
+  
+}
+
+' External Dependencies
+class "External: ML Service (S5)" as MLService
+class "External: Git Repository" as GitRepo
+class "External: Database (PostgreSQL)" as Database
+
+MLServiceClient ..> MLService : calls
+GitStorageService ..> GitRepo : interacts
+PolicyService ..> Database : persists
+PrioritizationPlan ..> Database : stored in
+
+@enduml
+
+
+
+

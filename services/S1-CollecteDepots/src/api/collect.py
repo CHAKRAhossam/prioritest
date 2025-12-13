@@ -21,11 +21,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/collect", tags=["Collection"])
 
 
+class DateRange(BaseModel):
+    """Date range model."""
+    start: str = Field(..., description="Start date (ISO format)")
+    end: str = Field(..., description="End date (ISO format)")
+
+
 class CollectRequest(BaseModel):
-    """Request model for manual collection."""
+    """
+    Request model for manual collection.
+    
+    Input format (from architecture spec):
+    {
+      "repository_url": "https://github.com/org/repo",
+      "collect_type": "commits|issues|ci_reports",
+      "date_range": {
+        "start": "2025-01-01",
+        "end": "2025-12-04"
+      }
+    }
+    """
     repository_url: HttpUrl = Field(..., description="Repository URL")
     collect_type: str = Field(..., description="Types to collect: commits|issues|ci_reports")
-    date_range: Optional[dict] = Field(None, description="Date range for collection")
+    date_range: Optional[DateRange] = Field(None, description="Date range for collection")
     
     class Config:
         json_schema_extra = {
@@ -92,10 +110,8 @@ async def collect_data(
         since = None
         until = None
         if request.date_range:
-            if "start" in request.date_range:
-                since = datetime.fromisoformat(request.date_range["start"])
-            if "end" in request.date_range:
-                until = datetime.fromisoformat(request.date_range["end"])
+            since = datetime.fromisoformat(request.date_range.start)
+            until = datetime.fromisoformat(request.date_range.end)
         
         # Schedule background task
         background_tasks.add_task(
@@ -158,8 +174,7 @@ def _process_collection(
                         "author_email": event.author_email,
                         "author_name": event.author_name,
                         "timestamp": event.timestamp,
-                        "branch": event.metadata.branch,
-                        "files_changed_json": [f.model_dump() for f in event.files_changed],
+                        "files_changed": [f.model_dump() for f in event.files_changed],
                         "metadata_json": event.metadata.model_dump()
                     })
             
@@ -195,8 +210,7 @@ def _process_collection(
                         "author_email": event.author_email,
                         "author_name": event.author_name,
                         "timestamp": event.timestamp,
-                        "branch": event.metadata.branch,
-                        "files_changed_json": [f.model_dump() for f in event.files_changed],
+                        "files_changed": [f.model_dump() for f in event.files_changed],
                         "metadata_json": event.metadata.model_dump()
                     })
         
@@ -215,7 +229,7 @@ def _process_collection(
                         "summary": event.summary,
                         "status": event.status,
                         "created_at": event.created_at,
-                        "linked_commits_json": event.linked_commits,
+                        "linked_commits": event.linked_commits,
                         "metadata_json": event.metadata or {}
                     })
             
@@ -240,7 +254,7 @@ def _process_collection(
                         "summary": event.summary,
                         "status": event.status,
                         "created_at": event.created_at,
-                        "linked_commits_json": event.linked_commits,
+                        "linked_commits": event.linked_commits,
                         "metadata_json": event.metadata or {}
                     })
         

@@ -56,6 +56,12 @@ docker-compose up -d
 
 ## 📚 Documentation
 
+### Architecture et Design
+- **[`docs/ARCHITECTURE_COMPLETE.md`](docs/ARCHITECTURE_COMPLETE.md)** : Documentation complète de l'architecture avec inputs/outputs JSON, communications entre services et détails de chaque microservice (S1-S9)
+- **[`docs/COMMUNICATION_MATRIX.md`](docs/COMMUNICATION_MATRIX.md)** : Matrice de communication détaillée entre tous les services (Kafka, REST API, SQL, etc.)
+- **[`docs/diagrams/ARCHITECTURE_GUIDE.md`](docs/diagrams/ARCHITECTURE_GUIDE.md)** : Guide d'architecture avec diagrammes et technologies par service
+
+### Guides Pratiques
 - `docs/QUICK_START.md` : Guide de démarrage rapide pour l'équipe
 - `docs/SETUP_TEAM.md` : Guide complet d'onboarding pour les membres de l'équipe
 - `docs/GITLAB_AUTH.md` : Guide d'authentification GitLab (Personal Access Token pour SSO/SAML)

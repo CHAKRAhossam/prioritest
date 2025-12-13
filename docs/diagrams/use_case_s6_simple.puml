@@ -1,0 +1,36 @@
+@startuml Use Case Diagram - Service 6 (Simplifié)
+
+left to right direction
+
+' Acteurs
+actor "Développeur" as Dev
+actor "CI/CD" as CICD
+actor "Service ML (S5)" as ML
+
+' Service 6
+rectangle "S6 - Moteur Priorisation" {
+  
+  usecase "Prioriser les classes à tester" as UC1
+  usecase "Calculer l'effort" as UC2
+  usecase "Appliquer criticité" as UC3
+  usecase "Optimiser avec contraintes" as UC4
+  usecase "Calculer métriques" as UC5
+  usecase "Gérer politiques" as UC6
+}
+
+' Relations
+Dev --> UC1
+Dev --> UC6
+CICD --> UC1
+ML --> UC1 : fournit prédictions
+
+UC1 ..> UC2 : <<include>>
+UC1 ..> UC3 : <<include>>
+UC1 ..> UC4 : <<include>>
+UC1 ..> UC5 : <<include>>
+
+@enduml
+
+
+
+

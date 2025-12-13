@@ -6,6 +6,17 @@ import java.util.List;
 /**
  * DTO for Kafka messages to code.metrics topic.
  * Represents code metrics extracted for a class.
+ * 
+ * Format aligned with architecture specification:
+ * {
+ *   "event_id": "evt_126",
+ *   "repository_id": "repo_12345",
+ *   "commit_sha": "abc123",
+ *   "class_name": "com.example.UserService",
+ *   "file_path": "src/UserService.java",
+ *   "metrics": {...},
+ *   "timestamp": "2025-12-04T10:40:00Z"
+ * }
  */
 public class CodeMetricsEvent {
     
@@ -26,6 +37,9 @@ public class CodeMetricsEvent {
     
     @JsonProperty("metrics")
     private Metrics metrics;
+    
+    @JsonProperty("timestamp")
+    private String timestamp;
     
     // Getters and Setters
     public String getEventId() {
@@ -74,6 +88,14 @@ public class CodeMetricsEvent {
     
     public void setMetrics(Metrics metrics) {
         this.metrics = metrics;
+    }
+    
+    public String getTimestamp() {
+        return timestamp;
+    }
+    
+    public void setTimestamp(String timestamp) {
+        this.timestamp = timestamp;
     }
     
     /**

@@ -1,0 +1,192 @@
+@startuml Use Case Diagram - Service 6 & Service 7
+
+left to right direction
+
+' ==========================================
+' ACTEURS
+' ==========================================
+
+actor "Développeur" as Developer
+actor "Système CI/CD" as CICD
+actor "Service ML (S5)" as MLService
+actor "Git Repository" as GitRepo
+actor "Administrateur" as Admin
+
+' ==========================================
+' SERVICE 6 - MOTEUR DE PRIORISATION
+' ==========================================
+
+rectangle "S6 - Moteur de Priorisation" {
+  
+  package "Priorisation" {
+    usecase "Prioriser les classes à tester" as UC_S6_01
+    usecase "Récupérer un plan de priorisation" as UC_S6_02
+    usecase "Calculer l'effort (LOC, complexité)" as UC_S6_03
+    usecase "Appliquer la criticité des modules" as UC_S6_04
+    usecase "Optimiser avec contraintes (OR-Tools)" as UC_S6_05
+    usecase "Calculer les métriques de performance" as UC_S6_06
+  }
+  
+  package "Gestion des Politiques" {
+    usecase "Créer une politique de priorisation" as UC_S6_07
+    usecase "Modifier une politique" as UC_S6_08
+    usecase "Supprimer une politique" as UC_S6_09
+    usecase "Consulter les politiques" as UC_S6_10
+  }
+  
+  package "Stratégies" {
+    usecase "Maximiser Popt@20" as UC_S6_11
+    usecase "Top K Coverage" as UC_S6_12
+    usecase "Optimisation Budget" as UC_S6_13
+    usecase "Optimisation Couverture" as UC_S6_14
+    usecase "Multi-objectif" as UC_S6_15
+  }
+  
+}
+
+' ==========================================
+' SERVICE 7 - TEST SCAFFOLDER
+' ==========================================
+
+rectangle "S7 - Test Scaffolder" {
+  
+  package "Analyse AST" {
+    usecase "Analyser une classe Java" as UC_S7_01
+    usecase "Extraire les méthodes publiques" as UC_S7_02
+    usecase "Extraire les dépendances" as UC_S7_03
+    usecase "Identifier les annotations" as UC_S7_04
+  }
+  
+  package "Génération de Tests" {
+    usecase "Générer un squelette de test JUnit" as UC_S7_05
+    usecase "Générer les mocks Mockito" as UC_S7_06
+    usecase "Créer la structure Arrange-Act-Assert" as UC_S7_07
+    usecase "Générer le setup/teardown" as UC_S7_08
+  }
+  
+  package "Suggestions" {
+    usecase "Suggérer des cas de test d'équivalence" as UC_S7_09
+    usecase "Suggérer des cas de test limites" as UC_S7_10
+    usecase "Suggérer des cas de test d'exceptions" as UC_S7_11
+    usecase "Suggérer des cas de test null" as UC_S7_12
+    usecase "Suggérer des cas de test collections" as UC_S7_13
+  }
+  
+  package "Mutation Testing" {
+    usecase "Générer une checklist de mutation testing" as UC_S7_14
+    usecase "Identifier les opérateurs de mutation" as UC_S7_15
+    usecase "Estimer le score de mutation" as UC_S7_16
+  }
+  
+  package "Stockage Git" {
+    usecase "Sauvegarder les tests générés dans Git" as UC_S7_17
+    usecase "Sauvegarder les suggestions dans Git" as UC_S7_18
+    usecase "Créer une branche Git" as UC_S7_19
+    usecase "Pousser vers le remote Git" as UC_S7_20
+  }
+  
+  package "Génération Complète" {
+    usecase "Générer complètement (workflow intégré)" as UC_S7_21
+  }
+  
+}
+
+' ==========================================
+' RELATIONS ACTEURS - CAS D'UTILISATION
+' ==========================================
+
+' Service 6
+Developer --> UC_S6_01
+Developer --> UC_S6_02
+Developer --> UC_S6_11
+Developer --> UC_S6_12
+Developer --> UC_S6_13
+Developer --> UC_S6_14
+Developer --> UC_S6_15
+
+CICD --> UC_S6_01
+CICD --> UC_S6_06
+
+Admin --> UC_S6_07
+Admin --> UC_S6_08
+Admin --> UC_S6_09
+Admin --> UC_S6_10
+
+MLService --> UC_S6_01 : provides predictions
+
+' Service 7
+Developer --> UC_S7_01
+Developer --> UC_S7_05
+Developer --> UC_S7_09
+Developer --> UC_S7_10
+Developer --> UC_S7_11
+Developer --> UC_S7_14
+Developer --> UC_S7_17
+Developer --> UC_S7_21
+
+CICD --> UC_S7_21
+CICD --> UC_S7_17
+
+GitRepo --> UC_S7_17 : stores
+GitRepo --> UC_S7_18 : stores
+GitRepo --> UC_S7_19 : creates
+GitRepo --> UC_S7_20 : receives
+
+' ==========================================
+' RELATIONS ENTRE CAS D'UTILISATION
+' ==========================================
+
+' Service 6 - Include
+UC_S6_01 ..> UC_S6_03 : <<include>>
+UC_S6_01 ..> UC_S6_04 : <<include>>
+UC_S6_01 ..> UC_S6_05 : <<include>>
+UC_S6_01 ..> UC_S6_06 : <<include>>
+
+UC_S6_11 ..> UC_S6_05 : <<include>>
+UC_S6_12 ..> UC_S6_05 : <<include>>
+UC_S6_13 ..> UC_S6_05 : <<include>>
+UC_S6_14 ..> UC_S6_05 : <<include>>
+UC_S6_15 ..> UC_S6_05 : <<include>>
+
+' Service 7 - Include
+UC_S7_05 ..> UC_S7_01 : <<include>>
+UC_S7_05 ..> UC_S7_06 : <<include>>
+UC_S7_05 ..> UC_S7_07 : <<include>>
+UC_S7_05 ..> UC_S7_08 : <<include>>
+
+UC_S7_09 ..> UC_S7_01 : <<include>>
+UC_S7_10 ..> UC_S7_01 : <<include>>
+UC_S7_11 ..> UC_S7_01 : <<include>>
+UC_S7_12 ..> UC_S7_01 : <<include>>
+UC_S7_13 ..> UC_S7_01 : <<include>>
+
+UC_S7_14 ..> UC_S7_01 : <<include>>
+UC_S7_14 ..> UC_S7_15 : <<include>>
+UC_S7_14 ..> UC_S7_16 : <<include>>
+
+UC_S7_17 ..> UC_S7_05 : <<include>>
+UC_S7_17 ..> UC_S7_19 : <<include>>
+UC_S7_18 ..> UC_S7_09 : <<include>>
+
+UC_S7_21 ..> UC_S7_01 : <<include>>
+UC_S7_21 ..> UC_S7_05 : <<include>>
+UC_S7_21 ..> UC_S7_09 : <<include>>
+UC_S7_21 ..> UC_S7_14 : <<include>>
+UC_S7_21 ..> UC_S7_17 : <<include>> (optional)
+
+' Service 7 - Extend
+UC_S7_17 <.. UC_S7_20 : <<extend>> (if push enabled)
+UC_S7_21 <.. UC_S7_18 : <<extend>> (if suggestions enabled)
+
+' ==========================================
+' RELATIONS ENTRE SERVICES
+' ==========================================
+
+' S6 peut utiliser S7 pour générer des tests pour les classes priorisées
+UC_S6_01 ..> UC_S7_21 : <<uses>> (optional)
+
+@enduml
+
+
+
+

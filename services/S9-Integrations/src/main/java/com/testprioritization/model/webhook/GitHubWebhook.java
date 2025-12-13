@@ -10,6 +10,23 @@ import lombok.NoArgsConstructor;
 
 /**
  * GitHub webhook payload for pull request events.
+ * Aligned with architecture specification.
+ * 
+ * Input format from architecture spec:
+ * {
+ *   "event": "pull_request",
+ *   "action": "opened|synchronize",
+ *   "pull_request": {
+ *     "number": 123,
+ *     "head": {
+ *       "sha": "abc123",
+ *       "ref": "feature/new-feature"
+ *     },
+ *     "files": [
+ *       {"path": "src/UserService.java", "status": "modified"}
+ *     ]
+ *   }
+ * }
  */
 @Data
 @Builder

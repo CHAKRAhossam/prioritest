@@ -6,7 +6,7 @@ import os
 import joblib
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -42,7 +42,26 @@ def load_model():
 
 # Pydantic models for request/response
 class PredictionInput(BaseModel):
-    """Input features for prediction."""
+    """
+    Input features for prediction aligned with architecture specification.
+    
+    Format from architecture spec:
+    {
+      "class_name": "com.example.UserService",
+      "repository_id": "repo_12345",
+      "features": {
+        "loc": 150,
+        "cyclomatic_complexity": 12,
+        "churn": 0.15,
+        "num_authors": 3,
+        "bug_fix_proximity": 0.8,
+        "current_line_coverage": 0.85,
+        "test_debt_score": 0.2
+      }
+    }
+    """
+    class_name: Optional[str] = None
+    repository_id: Optional[str] = None
     lines_modified: float
     complexity: float
     author_type_Bot: float = 0.0
@@ -61,10 +80,27 @@ class PredictionInput(BaseModel):
 
 
 class PredictionOutput(BaseModel):
-    """Output of prediction."""
+    """
+    Output of prediction aligned with architecture specification.
+    
+    Format from architecture spec:
+    {
+      "class_name": "com.example.UserService",
+      "risk_score": 0.75,
+      "risk_level": "high",
+      "uncertainty": 0.12,
+      "top_k_recommendations": [...],
+      "shap_values": {...},
+      "explanation": "..."
+    }
+    """
     class_name: str
     risk_score: float
     risk_level: str
+    uncertainty: Optional[float] = None
+    top_k_recommendations: Optional[List[dict]] = None
+    shap_values: Optional[dict] = None
+    explanation: Optional[str] = None
 
 
 @app.get("/")
@@ -129,14 +165,69 @@ def predict(input_data: PredictionInput):
     else:
         risk_level = "low"
     
-    # Class name
-    class_name = "risky" if prediction == 1 else "safe"
+    # Class name (use actual class name if provided, otherwise "risky"/"safe")
+    class_name = getattr(input_data, 'class_name', None) or ("risky" if prediction == 1 else "safe")
+    
+    # Calculate uncertainty (simplified: based on probability distribution)
+    uncertainty = abs(probabilities[0] - probabilities[1]) / 2.0 if len(probabilities) == 2 else 0.0
+    
+    # Generate explanation
+    explanation = _generate_explanation(risk_score, risk_level, input_data)
+    
+    # SHAP values (placeholder - would need actual SHAP calculation)
+    shap_values = _calculate_shap_values(input_data, risk_score)
+    
+    # Top K recommendations (simplified - would come from batch prediction)
+    top_k_recommendations = [{
+        "class_name": class_name,
+        "risk_score": risk_score,
+        "priority": 1
+    }]
     
     return PredictionOutput(
         class_name=class_name,
         risk_score=risk_score,
-        risk_level=risk_level
+        risk_level=risk_level,
+        uncertainty=uncertainty,
+        top_k_recommendations=top_k_recommendations,
+        shap_values=shap_values,
+        explanation=explanation
     )
+
+
+def _generate_explanation(risk_score: float, risk_level: str, input_data: PredictionInput) -> str:
+    """Generate human-readable explanation for the prediction."""
+    factors = []
+    
+    if input_data.complexity > 10:
+        factors.append(f"High complexity ({input_data.complexity:.1f})")
+    if input_data.bug_fix_proximity > 0.7:
+        factors.append("High proximity to bug-fix commits")
+    if input_data.churn > 50:
+        factors.append(f"High code churn ({input_data.churn:.0f})")
+    
+    if factors:
+        return f"High risk due to: {', '.join(factors)}"
+    else:
+        return f"Risk level: {risk_level} (score: {risk_score:.2f})"
+
+
+def _calculate_shap_values(input_data: PredictionInput, risk_score: float) -> dict:
+    """
+    Calculate SHAP values for feature contributions.
+    Placeholder implementation - would need actual SHAP library integration.
+    """
+    # Simplified: proportional contribution based on feature values
+    total_impact = abs(input_data.complexity) + abs(input_data.churn) + abs(input_data.bug_fix_proximity)
+    
+    if total_impact > 0:
+        return {
+            "loc": round(input_data.lines_modified / max(total_impact, 1) * risk_score, 3),
+            "cyclomatic_complexity": round(input_data.complexity / max(total_impact, 1) * risk_score, 3),
+            "churn": round(input_data.churn / max(total_impact, 1) * risk_score, 3),
+            "bug_fix_proximity": round(input_data.bug_fix_proximity / max(total_impact, 1) * risk_score, 3)
+        }
+    return {}
 
 
 if __name__ == "__main__":

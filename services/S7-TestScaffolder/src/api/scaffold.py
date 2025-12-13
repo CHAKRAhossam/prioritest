@@ -3,7 +3,7 @@ API endpoints pour la génération de tests
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict
 from src.services.ast_analyzer import ASTAnalyzer
 from src.services.test_generator import TestGenerator
 from src.services.test_suggestions import TestSuggestionsService
@@ -24,6 +24,125 @@ suggestions_service = TestSuggestionsService()
 mock_generator = MockGenerator()
 mutation_checklist_service = MutationChecklistService()
 git_storage = GitStorageService(repo_url=os.getenv('GIT_REPO_URL'))
+
+
+# Architecture specification endpoints
+class TestScaffoldRequest(BaseModel):
+    """Request model aligned with architecture specification."""
+    class_name: str = Field(..., description="Fully qualified class name", example="com.example.UserService")
+    priority: Optional[int] = Field(None, description="Priority from prioritization service", example=1)
+    file_path: Optional[str] = Field(None, description="File path", example="src/UserService.java")
+
+
+class TestScaffoldBatchRequest(BaseModel):
+    """Batch request model aligned with architecture specification."""
+    prioritized_classes: List[dict] = Field(..., description="List of prioritized classes from S6", example=[
+        {
+            "class_name": "com.example.UserService",
+            "priority": 1,
+            "file_path": "src/UserService.java"
+        }
+    ])
+
+
+class TestScaffoldResponse(BaseModel):
+    """
+    Response model aligned with architecture specification.
+    
+    Format from architecture spec:
+    {
+      "class_name": "com.example.UserService",
+      "test_file_path": "tests/UserServiceTest.java",
+      "test_template": "...",
+      "suggested_test_cases": [...],
+      "mutation_checklist": [...],
+      "repository_url": "..."
+    }
+    """
+    class_name: str
+    test_file_path: str
+    test_template: str
+    suggested_test_cases: List[dict]
+    mutation_checklist: List[str]
+    repository_url: Optional[str] = None
+
+
+@router.get(
+    "/test-scaffold",
+    response_model=TestScaffoldResponse,
+    summary="Generate test scaffold for a class (Architecture Spec)",
+    description="""
+    Generate test scaffold aligned with architecture specification.
+    
+    GET /api/v1/test-scaffold?class_name=com.example.UserService&priority=1
+    
+    This endpoint matches the architecture specification format.
+    """
+)
+def get_test_scaffold(
+    class_name: str,
+    priority: Optional[int] = None
+):
+    """
+    Generate test scaffold for a single class.
+    Aligned with architecture specification.
+    """
+    # This is a placeholder - would need to fetch class code from repository
+    # For now, return a template response
+    return TestScaffoldResponse(
+        class_name=class_name,
+        test_file_path=f"tests/{class_name.split('.')[-1]}Test.java",
+        test_template=f"public class {class_name.split('.')[-1]}Test {{\n @Test\n public void test() {{...}}\n}}",
+        suggested_test_cases=[
+            {
+                "type": "equivalence",
+                "description": "Test with valid input",
+                "method": "testValidInput"
+            }
+        ],
+        mutation_checklist=[
+            "Test all public methods",
+            "Cover edge cases",
+            "Verify exception handling"
+        ],
+        repository_url=os.getenv('GIT_REPO_URL')
+    )
+
+
+@router.post(
+    "/test-scaffold/batch",
+    response_model=List[TestScaffoldResponse],
+    summary="Generate test scaffolds in batch (Architecture Spec)",
+    description="""
+    Generate test scaffolds for multiple classes in batch.
+    
+    POST /api/v1/test-scaffold/batch
+    {
+      "prioritized_classes": [
+        {
+          "class_name": "com.example.UserService",
+          "priority": 1,
+          "file_path": "src/UserService.java"
+        }
+      ]
+    }
+    
+    This endpoint matches the architecture specification format.
+    """
+)
+def batch_test_scaffold(request: TestScaffoldBatchRequest):
+    """
+    Generate test scaffolds for multiple classes.
+    Aligned with architecture specification.
+    """
+    results = []
+    for cls in request.prioritized_classes:
+        result = get_test_scaffold(
+            class_name=cls.get("class_name"),
+            priority=cls.get("priority")
+        )
+        results.append(result)
+    return results
 
 
 class AnalyzeClassRequest(BaseModel):

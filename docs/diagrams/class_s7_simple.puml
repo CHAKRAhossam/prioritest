@@ -1,0 +1,104 @@
+@startuml Class Diagram - Service 7 (Simplifié)
+
+package "S7 - Test Scaffolder" {
+  
+  ' API
+  class ScaffoldRouter {
+    + analyze_class()
+    + generate_test()
+    + suggest_test_cases()
+    + mutation_checklist()
+  }
+  
+  ' Models
+  class AnalyzeClassRequest {
+    + java_code
+    + file_path
+  }
+  
+  class GenerateTestRequest {
+    + java_code
+    + test_package
+  }
+  
+  class GenerateTestResponse {
+    + test_code
+    + test_class_name
+    + analysis
+  }
+  
+  class ClassAnalysis {
+    + class_name
+    + methods
+    + constructors
+    + fields
+    + dependencies
+  }
+  
+  class MethodInfo {
+    + name
+    + return_type
+    + parameters
+    + is_public
+  }
+  
+  class ClassSuggestions {
+    + class_name
+    + method_suggestions
+    + total_suggestions
+  }
+  
+  class ClassMutationChecklist {
+    + class_name
+    + method_checklists
+    + total_items
+  }
+  
+  ' Services
+  class ASTAnalyzer {
+    + analyze_class()
+  }
+  
+  class TestGenerator {
+    + generate_test_class()
+  }
+  
+  class MockGenerator {
+    + extract_mock_fields()
+    + generate_mock_configurations()
+  }
+  
+  class TestSuggestionsService {
+    + generate_suggestions()
+  }
+  
+  class MutationChecklistService {
+    + generate_checklist()
+  }
+  
+  class GitStorageService {
+    + save_test_file()
+    + push_changes()
+  }
+  
+  ' Relations
+  ScaffoldRouter --> AnalyzeClassRequest
+  ScaffoldRouter --> GenerateTestRequest
+  ScaffoldRouter --> GenerateTestResponse
+  ScaffoldRouter --> ASTAnalyzer
+  ScaffoldRouter --> TestGenerator
+  ScaffoldRouter --> TestSuggestionsService
+  ScaffoldRouter --> MutationChecklistService
+  ScaffoldRouter --> GitStorageService
+  
+  GenerateTestResponse --> ClassAnalysis
+  ClassAnalysis --> MethodInfo
+  TestGenerator --> MockGenerator
+  TestGenerator --> ClassAnalysis
+}
+
+@enduml
+
+
+
+
