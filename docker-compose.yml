@@ -87,6 +87,8 @@ services:
 
   # Service S1 - CollecteDepots
   collecte-depots:
+    env_file:
+      - ./services/S1-CollecteDepots/.env
     build:
       context: ./services/S1-CollecteDepots
       dockerfile: Dockerfile
