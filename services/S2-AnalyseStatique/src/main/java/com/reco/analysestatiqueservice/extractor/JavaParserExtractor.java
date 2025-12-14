@@ -55,15 +55,17 @@ public class JavaParserExtractor {
     public List<FileScanResult> listJavaFilesDetailed(File projectDir) {
         logger.debug("Scanning for Java files in: {}", projectDir.getAbsolutePath());
         List<FileScanResult> results = new ArrayList<>();
+        Path projectPath = projectDir.toPath();
 
-        try (Stream<Path> walk = Files.walk(projectDir.toPath())) {
+        try (Stream<Path> walk = Files.walk(projectPath)) {
             walk.filter(p -> p.toString().endsWith(".java"))
                     .filter(Files::isRegularFile)
                     .forEach(p -> {
-                        File file = p.toFile();
+                        // Calculate relative path from project root
+                        Path relativePath = projectPath.relativize(p);
                         results.add(new FileScanResult(
-                                file.getName(),
-                                file.getAbsolutePath()
+                                relativePath.toString(),
+                                p.toAbsolutePath().toString()
                         ));
                     });
         } catch (Exception e) {

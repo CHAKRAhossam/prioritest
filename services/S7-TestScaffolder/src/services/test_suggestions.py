@@ -363,3 +363,4 @@ class TestSuggestionsService:
         # Capitaliser la première lettre
         return name[0].upper() + name[1:] if len(name) > 1 else name.upper()
 
+

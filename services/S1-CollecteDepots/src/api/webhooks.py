@@ -338,7 +338,35 @@ def _process_issue_event(
         # Publish to Kafka
         kafka_service.publish_issue(event)
         
+        # Get or create repository (required for foreign key constraint)
+        # Extract project info from repository_id (format: jira_PROJECT_KEY)
+        project_key = event.repository_id.replace("jira_", "")
+        
+        # Get Jira URL from settings
+        from src.config import settings
+        jira_url = settings.jira_url or "https://prioritest.atlassian.net"
+        
+        # Create repository if it doesn't exist
+        db_service.get_or_create_repository(
+            repository_id=event.repository_id,
+            name=project_key,
+            full_name=f"{project_key} (Jira)",
+            url=f"{jira_url}/browse/{project_key}",
+            source="jira",
+            default_branch="main",
+            metadata_json={"project_key": project_key}
+        )
+        
         # Store in database
+        # Handle metadata: it can be a dict or a Pydantic model
+        if event.metadata:
+            if isinstance(event.metadata, dict):
+                metadata_json = event.metadata
+            else:
+                metadata_json = event.metadata.model_dump()
+        else:
+            metadata_json = {}
+        
         db_service.store_issue({
             "event_id": event.event_id,
             "repository_id": event.repository_id,
@@ -348,7 +376,7 @@ def _process_issue_event(
             "status": event.status,
             "created_at": event.created_at,
             "linked_commits": event.linked_commits,
-            "metadata_json": event.metadata.model_dump() if event.metadata else {}
+            "metadata_json": metadata_json
         })
         
         kafka_service.flush()

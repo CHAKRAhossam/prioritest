@@ -106,3 +106,4 @@ public class SimpleClass {
     assert result['class_name'] == 'SimpleClass'
     assert result['package_name'] == 'com.test'
 
+

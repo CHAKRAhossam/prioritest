@@ -57,6 +57,16 @@ async def upload_artifact(
         kafka = services["kafka"]
         db = services["db"]
         
+        # Ensure repository exists (required for foreign key constraint)
+        db.get_or_create_repository(
+            repository_id=repository_id,
+            name=repository_id.split("/")[-1] if "/" in repository_id else repository_id,
+            full_name=repository_id,
+            url=f"https://github.com/{repository_id}" if not repository_id.startswith("jira_") and not repository_id.startswith("gitlab_") else f"https://example.com/{repository_id}",
+            source="github" if not repository_id.startswith("jira_") and not repository_id.startswith("gitlab_") else ("jira" if repository_id.startswith("jira_") else "gitlab"),
+            default_branch="main"
+        )
+        
         # Generate build_id if not provided
         if not build_id:
             build_id = f"build_{uuid.uuid4().hex[:8]}"
@@ -94,15 +104,19 @@ async def upload_artifact(
         kafka.publish_artifact(event)
         
         # Store in database
+        # Note: artifact_size is stored in metadata_json, not as a separate field
+        artifact_metadata = event.metadata.copy()
+        artifact_metadata["size"] = len(content)
+        
         db.store_artifact({
+            "event_id": event.event_id,
             "repository_id": repository_id,
             "build_id": build_id,
             "commit_sha": commit_sha,
             "artifact_type": artifact_type.lower(),
             "artifact_url": artifact_url,
-            "artifact_size": len(content),
             "timestamp": datetime.utcnow(),
-            "metadata_json": event.metadata
+            "metadata_json": artifact_metadata
         })
         
         kafka.flush()

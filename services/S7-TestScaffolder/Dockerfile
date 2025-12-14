@@ -34,3 +34,4 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=5 \
 # Run the application
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8007"]
 
+

@@ -1,6 +1,9 @@
 # Dockerfile for Microservice 5 - ML Service
 FROM python:3.11-slim
 
+# Install curl for health checks and libgomp for LightGBM
+RUN apt-get update && apt-get install -y curl libgomp1 && rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 

@@ -781,4 +781,3 @@ def generate_complete(request: CompleteGenerationRequest):
             status_code=500,
             detail=f"Erreur lors de la génération complète: {str(e)}"
         )
-

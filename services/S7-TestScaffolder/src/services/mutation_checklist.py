@@ -253,3 +253,4 @@ class MutationChecklistService:
         
         return min(total_score / len(method_checklists), 1.0)
 
+
