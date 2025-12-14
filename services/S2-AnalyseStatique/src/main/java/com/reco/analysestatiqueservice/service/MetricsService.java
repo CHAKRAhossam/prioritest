@@ -112,7 +112,8 @@ public class MetricsService {
             List<SmellResult> smellResults = new ArrayList<>();
 
             for (FileScanResult fs : scannedFiles) {
-                File javaFile = new File(fs.getPath());
+                // FIX: Use absolute path to ensure file can be found
+                File javaFile = new File(fs.getAbsolutePath());
                 logger.debug("Analyzing file: {}", javaFile.getName());
 
                 try {
@@ -226,9 +227,12 @@ public class MetricsService {
         
         File repoDir = null;
         try {
-            // TODO: Get repository URL from repository_id (would need a repository service)
-            // For now, we'll assume the repository URL is provided or stored
-            String repositoryUrl = "https://github.com/" + event.getRepositoryId() + ".git";
+            // Get repository URL from metadata (provided by S1)
+            String repositoryUrl = extractRepositoryUrl(event);
+            if (repositoryUrl == null) {
+                logger.error("Cannot extract repository URL from event: {}", event.getEventId());
+                return;
+            }
             
             // Clone repository and checkout commit
             repoDir = gitService.cloneAndCheckout(repositoryUrl, event.getCommitSha());
@@ -243,6 +247,10 @@ public class MetricsService {
                 File file = new File(repoDir, fileChanged.getPath());
                 if (file.exists() && fileChanged.getPath().endsWith(".java")) {
                     filesToAnalyze.add(new FileScanResult(fileChanged.getPath(), file.getAbsolutePath()));
+                    logger.debug("Added Java file for analysis: {} -> {}", fileChanged.getPath(), file.getAbsolutePath());
+                } else if (fileChanged.getPath().endsWith(".java")) {
+                    logger.warn("Java file not found at expected path: {} (full path: {})", 
+                            fileChanged.getPath(), file.getAbsolutePath());
                 }
             }
             
@@ -251,13 +259,17 @@ public class MetricsService {
                 return;
             }
             
+            logger.info("Found {} Java files to analyze in commit event: {}", filesToAnalyze.size(), event.getEventId());
+            
             // Extract metrics for all files first
             List<ClassMetrics> allMetrics = new ArrayList<>();
             Map<String, List<DependencyEdge>> allDependencies = new HashMap<>();
             Map<String, List<SmellResult>> allSmells = new HashMap<>();
             
             for (FileScanResult fs : filesToAnalyze) {
-                File javaFile = new File(fs.getPath());
+                // FIX: Use absolute path instead of relative path
+                File javaFile = new File(fs.getAbsolutePath());
+                logger.debug("Analyzing file: {}", javaFile.getAbsolutePath());
                 try {
                     ClassMetrics cm = ckMetricsExtractor.extract(javaFile);
                     if (cm != null) {
@@ -378,5 +390,57 @@ public class MetricsService {
             }
         }
         return metrics.getClassName();
+    }
+    
+    /**
+     * Extracts repository URL from commit event metadata.
+     * Tries to get it from metadata.extra.repository_url first,
+     * then falls back to constructing from repository_id if needed.
+     * 
+     * @param event The commit event
+     * @return Repository URL or null if cannot be determined
+     */
+    private String extractRepositoryUrl(CommitEvent event) {
+        // Try to get from metadata
+        Map<String, Object> metadata = event.getMetadata();
+        if (metadata != null && metadata.containsKey("extra")) {
+            Object extraObj = metadata.get("extra");
+            if (extraObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> extra = (Map<String, Object>) extraObj;
+                if (extra.containsKey("repository_url")) {
+                    String url = (String) extra.get("repository_url");
+                    logger.debug("Using repository URL from metadata: {}", url);
+                    return url;
+                }
+            }
+        }
+        
+        // Fallback: try to reconstruct from repository_id
+        String repoId = event.getRepositoryId();
+        logger.warn("Repository URL not found in metadata for event: {}. Attempting fallback reconstruction.", 
+                event.getEventId());
+        
+        if (repoId.startsWith("github_")) {
+            // Parse: "github_spring-projects_spring-petclinic" -> "spring-projects/spring-petclinic"
+            String path = repoId.substring(7); // Remove "github_"
+            // Replace first underscore with slash
+            int firstUnderscore = path.indexOf('_');
+            if (firstUnderscore > 0) {
+                path = path.substring(0, firstUnderscore) + "/" + path.substring(firstUnderscore + 1);
+                return "https://github.com/" + path + ".git";
+            }
+        } else if (repoId.startsWith("gitlab_")) {
+            // Similar logic for GitLab
+            String path = repoId.substring(7);
+            int firstUnderscore = path.indexOf('_');
+            if (firstUnderscore > 0) {
+                path = path.substring(0, firstUnderscore) + "/" + path.substring(firstUnderscore + 1);
+                return "https://gitlab.com/" + path + ".git";
+            }
+        }
+        
+        logger.error("Cannot determine repository URL from repository_id: {}", repoId);
+        return null;
     }
 }

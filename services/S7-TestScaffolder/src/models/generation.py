@@ -2,7 +2,7 @@
 Modèles de données pour la génération complète de tests
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from src.models.ast_models import ClassAnalysis
 from src.models.test_suggestions import ClassSuggestions
 from src.models.mutation_checklist import ClassMutationChecklist
@@ -33,5 +33,5 @@ class CompleteGenerationResponse(BaseModel):
     suggestions: Optional[ClassSuggestions] = Field(None, description="Suggestions de cas de test")
     mutation_checklist: Optional[ClassMutationChecklist] = Field(None, description="Checklist de mutation testing")
     git_storage: Optional[Dict[str, str]] = Field(None, description="Informations de stockage Git")
-    summary: Dict[str, any] = Field(..., description="Résumé de la génération")
+    summary: Dict[str, Any] = Field(..., description="Résumé de la génération")
 

@@ -27,6 +27,21 @@ class ClassBalancer:
         Returns:
             tuple: (X_resampled, y_resampled)
         """
+        # Check if we have at least 2 classes
+        unique_classes = np.unique(y)
+        if len(unique_classes) < 2:
+            print(f"⚠️  Only {len(unique_classes)} class(es) found. SMOTE requires at least 2 classes.")
+            print("   Skipping SMOTE resampling. Returning original data.")
+            return X, y
+        
+        # Check if minority class has enough samples for SMOTE (need at least k_neighbors+1)
+        class_counts = Counter(y)
+        min_samples = min(class_counts.values())
+        if min_samples < 6:  # SMOTE default k_neighbors=5, needs at least 6 samples
+            print(f"⚠️  Minority class has only {min_samples} samples (SMOTE needs at least 6).")
+            print("   Skipping SMOTE resampling. Returning original data.")
+            return X, y
+        
         X_resampled, y_resampled = self.smote.fit_resample(X, y)
         return X_resampled, y_resampled
 

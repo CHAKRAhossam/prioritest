@@ -43,3 +43,4 @@ class ClassMutationChecklist(BaseModel):
     total_items: int = Field(0, description="Nombre total d'items")
     coverage_estimate: float = Field(0.0, description="Estimation de couverture mutation", example=0.75)
 
+

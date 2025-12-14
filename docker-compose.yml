@@ -13,6 +13,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - prioritest-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prioritest"]
       interval: 10s
@@ -32,6 +34,8 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    networks:
+      - prioritest-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -40,35 +44,39 @@ services:
 
   # Kafka
   zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+    image: confluentinc/cp-zookeeper:7.4.0
     container_name: prioritest-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    networks:
+      - prioritest-network
 
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.4.0
     container_name: prioritest-kafka
     depends_on:
       - zookeeper
     ports:
       - "9092:9092"
+      - "9093:9093"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9093
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 30s
       timeout: 10s
       retries: 5
     networks:
-      - default
+      - prioritest-network
 
   # MLflow
   mlflow:
@@ -148,6 +156,8 @@ services:
       - kafka
       - postgres
       - minio
+    networks:
+      - prioritest-network
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
       interval: 30s
@@ -169,7 +179,7 @@ services:
       # SPRING_DATASOURCE_USERNAME: prioritest
       # SPRING_DATASOURCE_PASSWORD: prioritest
       # Kafka (optional - set to true when needed)
-      KAFKA_ENABLED: "false"
+      KAFKA_ENABLED: "true"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Feast (optional - set to true when needed)
       FEAST_ENABLED: "false"
@@ -181,8 +191,183 @@ services:
     depends_on:
       - kafka
       - postgres
+    networks:
+      - prioritest-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S3 - HistoriqueTests
+  historique-tests:
+    build:
+      context: ./services/S3-HistoriqueTests
+      dockerfile: Dockerfile
+    container_name: prioritest-historique-tests
+    ports:
+      - "8082:8081"
+    environment:
+      # Application
+      APP_NAME: HistoriqueTests
+      LOG_LEVEL: INFO
+      # Database (TimescaleDB)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/prioritest
+      SPRING_DATASOURCE_USERNAME: prioritest
+      SPRING_DATASOURCE_PASSWORD: prioritest
+      # Kafka
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: historique-tests-group
+      KAFKA_TOPIC_ARTIFACTS: ci.artifacts
+      # MinIO
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: ci-artifacts
+      # Server
+      SERVER_PORT: 8081
+    depends_on:
+      - kafka
+      - postgres
+      - minio
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Service S4 - PretraitementFeatures
+  pretraitement-features:
+    build:
+      context: ./services/S4-PretraitementFeatures
+      dockerfile: Dockerfile
+    container_name: prioritest-pretraitement-features
+    ports:
+      - "8004:8000"
+    environment:
+      # Application
+      APP_NAME: PretraitementFeatures
+      LOG_LEVEL: INFO
+      # Database (pour acceder a S3)
+      DATABASE_URL: postgresql://prioritest:prioritest@postgres:5432/prioritest
+      # Feast Feature Store
+      FEAST_REGISTRY_PATH: /app/feature_repo
+      FEAST_REPO_PATH: /app/feature_repo
+      # Kafka (pour consommer code.metrics de S2)
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_CODE_METRICS: code.metrics
+      # S3 API (pour recuperer metriques de tests)
+      S3_API_URL: http://historique-tests:8081
+      # Server
+      PORT: 8000
+    volumes:
+      - pretraitement_features_data:/app/data
+      - pretraitement_features_feature_repo:/app/feature_repo
+    depends_on:
+      - postgres
+      - kafka
+      - historique-tests
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S5 - MLService
+  ml-service:
+    build:
+      context: ./services/S5-MLService
+      dockerfile: Dockerfile
+    container_name: prioritest-ml-service
+    ports:
+      - "8005:8001"
+    environment:
+      # Application
+      APP_NAME: MLService
+      LOG_LEVEL: INFO
+      # S4 Data path (mounted volume)
+      DATA_PATH: /app/data
+      # Model storage
+      MODEL_PATH: /app/models
+      # MLflow (optional)
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ml_service_models:/app/models
+      - pretraitement_features_data:/app/data:ro
+    depends_on:
+      - pretraitement-features
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Service S6 - MoteurPriorisation
+  moteur-priorisation:
+    build:
+      context: ./services/S6-MoteurPriorisation
+      dockerfile: Dockerfile
+    container_name: prioritest-moteur-priorisation
+    ports:
+      - "8006:8006"
+    environment:
+      # Application
+      APP_NAME: MoteurPriorisation
+      LOG_LEVEL: INFO
+      # S5 ML Service
+      ML_SERVICE_URL: http://ml-service:8001
+      # Database
+      DATABASE_URL: postgresql://prioritest:prioritest@postgres:5432/prioritest
+      # S4 Data (for metrics)
+      S4_SERVICE_URL: http://pretraitement-features:8000
+    depends_on:
+      - ml-service
+      - postgres
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S7 - TestScaffolder
+  test-scaffolder:
+    build:
+      context: ./services/S7-TestScaffolder
+      dockerfile: Dockerfile
+    container_name: prioritest-test-scaffolder
+    ports:
+      - "8007:8007"
+    environment:
+      # Application
+      APP_NAME: TestScaffolder
+      LOG_LEVEL: INFO
+      # S6 Prioritization Service
+      PRIORITIZATION_SERVICE_URL: http://moteur-priorisation:8006
+      # S1 for code fetching
+      S1_SERVICE_URL: http://collecte-depots:8001
+      # Git repo (optional)
+      GIT_REPO_URL: ""
+    depends_on:
+      - moteur-priorisation
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -194,7 +379,13 @@ volumes:
   analyse_statique_temp:
   collecte_depots_temp:
   collecte_depots_data:
+  historique_tests_temp:
+  pretraitement_features_data:
+  pretraitement_features_feature_repo:
+  ml_service_models:
 
 networks:
+  prioritest-network:
+    driver: bridge
   default:
     name: prioritest-network

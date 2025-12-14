@@ -252,3 +252,4 @@ class GitStorageService:
         # (mais attention, cela supprimera aussi les changements non commités)
         pass
 
+

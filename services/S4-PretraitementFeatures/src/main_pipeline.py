@@ -10,9 +10,10 @@ from src.preprocessing.clean import DataCleaner
 from src.preprocessing.feature_engineering import FeatureEngineer
 from src.preprocessing.splitter import TimeAwareSplitter
 from src.preprocessing.balancer import ClassBalancer
+from src.data_loader import RealDataLoader
 
 def generate_dummy_data(output_path, n_samples=1000):
-    """Generates dummy data for the pipeline."""
+    """Generates dummy data for the pipeline (fallback when no real data)."""
     np.random.seed(42)
     dates = pd.date_range(start='2023-01-01', periods=n_samples, freq='H')
     
@@ -42,21 +43,57 @@ def main():
     processed_dir = os.path.join(base_dir, 'data', 'processed')
     os.makedirs(processed_dir, exist_ok=True)
 
-    # 1. Generate Data
-    generate_dummy_data(raw_data_path)
-
-    # 2. Load Data
-    print("Loading data...")
-    df = pd.read_csv(raw_data_path)
+    # 1. Load Real Data
+    print("=" * 60)
+    print("Loading REAL data from PostgreSQL and S3...")
+    print("=" * 60)
     
-    # Convert date to datetime
-    df['commit_date'] = pd.to_datetime(df['commit_date'])
+    data_loader = RealDataLoader()
+    df = data_loader.load_real_data()
+    
+    # Fallback to dummy data if no real data available
+    if df is None or df.empty or len(df) == 0:
+        print("\n⚠️  No real data found. Generating dummy data for testing...")
+        generate_dummy_data(raw_data_path)
+        df = pd.read_csv(raw_data_path)
+        df['commit_date'] = pd.to_datetime(df['commit_date'])
+    else:
+        print(f"\n✅ Loaded {len(df)} real records from database")
+        # Save raw data for reference
+        os.makedirs(os.path.dirname(raw_data_path), exist_ok=True)
+        df.to_csv(raw_data_path, index=False)
+        print(f"Saved raw data to {raw_data_path}")
+    
+    # Ensure commit_date is datetime
+    if 'commit_date' in df.columns:
+        df['commit_date'] = pd.to_datetime(df['commit_date'])
+    else:
+        # Fallback: create commit_date from timestamp if available
+        if 'timestamp' in df.columns:
+            df['commit_date'] = pd.to_datetime(df['timestamp'])
+        else:
+            print("⚠️  No date column found. Creating synthetic dates...")
+            df['commit_date'] = pd.date_range(start='2023-01-01', periods=len(df), freq='H')
     
     # 3. Separate Metadata (to preserve from Cleaner)
     # We keep commit_date for splitting, and target for balancing/training
-    meta_cols = ['commit_id', 'commit_date', 'target']
+    # Handle case where commit_id might not exist (use index)
+    meta_cols = ['commit_date', 'target']
+    if 'commit_id' in df.columns:
+        meta_cols.insert(0, 'commit_id')
+    elif 'id' in df.columns:
+        df = df.rename(columns={'id': 'commit_id'})
+        meta_cols.insert(0, 'commit_id')
+    else:
+        df['commit_id'] = df.index
+    
+    # Ensure target exists (create if missing)
+    if 'target' not in df.columns:
+        print("⚠️  No target column found. Creating synthetic target...")
+        df['target'] = np.random.choice([0, 1], size=len(df), p=[0.9, 0.1])
+    
     X_meta = df[meta_cols].copy()
-    X_features = df.drop(columns=meta_cols)
+    X_features = df.drop(columns=meta_cols, errors='ignore')
     
     # 4. Clean Data
     print("Cleaning data...")

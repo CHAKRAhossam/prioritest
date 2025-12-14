@@ -194,3 +194,4 @@ def test_estimate_coverage(suggestions_service, sample_class_analysis):
     if suggestions.total_suggestions > 0:
         assert suggestions.coverage_estimate > 0.0
 
+

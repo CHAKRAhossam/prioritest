@@ -293,3 +293,4 @@ class MockGenerator:
         primitives = ['int', 'long', 'double', 'float', 'boolean', 'char', 'byte', 'short', 'void']
         return type_name in primitives
 
+

@@ -75,7 +75,7 @@ class Issue(Base):
     """Issue table for storing issue/bug information."""
     __tablename__ = "issues"
     
-    id = Column[int](Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     event_id = Column(String, unique=True, index=True, comment="Event ID from Kafka")
     repository_id = Column(String, ForeignKey("repositories.id"), nullable=False, index=True)
     issue_key = Column(String, nullable=False, index=True, comment="Issue key (e.g., MTP-77)")

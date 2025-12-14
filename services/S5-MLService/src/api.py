@@ -1,112 +1,103 @@
 """
 FastAPI API for code file risk prediction.
-MTP-37: Production API with POST /api/v1/predict endpoint.
+S5 ML Service - Prediction API with SHAP explainability.
 """
 import os
 import joblib
+import numpy as np
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="ML Service - Code Risk Prediction",
-    description="Predict code file risk based on software metrics",
-    version="1.0.0"
+    title="S5 ML Service - Code Risk Prediction",
+    description="Predict code file risk based on software metrics from S4",
+    version="2.0.0"
 )
 
-# Load model and feature names at startup
-MODEL_PATH = "models/model.pkl"
-FEATURE_NAMES_PATH = "models/feature_names.pkl"
-
+# Global model and metadata
+MODEL_PATH = os.environ.get("MODEL_PATH", "/app/models")
 model = None
 feature_names = None
+shap_explainer = None
 
 
 @app.on_event("startup")
 def load_model():
     """Load the trained model and feature names at startup."""
-    global model, feature_names
+    global model, feature_names, shap_explainer
     
-    if not os.path.exists(MODEL_PATH):
-        print(f"Warning: Model not found at {MODEL_PATH}. Run train_model.py first.")
+    model_file = os.path.join(MODEL_PATH, "model.pkl")
+    feature_file = os.path.join(MODEL_PATH, "feature_names.pkl")
+    explainer_file = os.path.join(MODEL_PATH, "shap_explainer.pkl")
+    
+    if not os.path.exists(model_file):
+        logger.warning(f"Model not found at {model_file}. Run training first via /api/v1/train")
         return
     
-    model = joblib.load(MODEL_PATH)
-    print(f"Model loaded from {MODEL_PATH}")
+    model = joblib.load(model_file)
+    logger.info(f"Model loaded from {model_file}")
     
-    if os.path.exists(FEATURE_NAMES_PATH):
-        feature_names = joblib.load(FEATURE_NAMES_PATH)
-        print(f"Feature names loaded: {feature_names}")
+    if os.path.exists(feature_file):
+        feature_names = joblib.load(feature_file)
+        logger.info(f"Loaded {len(feature_names)} feature names")
+    
+    if os.path.exists(explainer_file):
+        try:
+            shap_explainer = joblib.load(explainer_file)
+            logger.info("SHAP explainer loaded")
+        except:
+            logger.warning("Could not load SHAP explainer")
 
 
-# Pydantic models for request/response
+# Pydantic models
 class PredictionInput(BaseModel):
-    """
-    Input features for prediction aligned with architecture specification.
-    
-    Format from architecture spec:
-    {
-      "class_name": "com.example.UserService",
-      "repository_id": "repo_12345",
-      "features": {
-        "loc": 150,
-        "cyclomatic_complexity": 12,
-        "churn": 0.15,
-        "num_authors": 3,
-        "bug_fix_proximity": 0.8,
-        "current_line_coverage": 0.85,
-        "test_debt_score": 0.2
-      }
-    }
-    """
-    class_name: Optional[str] = None
+    """Input for single prediction - accepts feature dict."""
+    class_name: Optional[str] = "unknown"
     repository_id: Optional[str] = None
-    lines_modified: float
-    complexity: float
-    author_type_Bot: float = 0.0
-    author_type_Junior: float = 0.0
-    author_type_Senior: float = 0.0
-    file_type_java: float = 0.0
-    file_type_py: float = 0.0
-    file_type_xml: float = 0.0
-    churn: float
-    num_authors: float
-    bug_fix_proximity: float
+    features: Dict[str, float]
 
-    class Config:
-        # Allow field names with dots/underscores
-        populate_by_name = True
+
+class BatchPredictionInput(BaseModel):
+    """Input for batch predictions."""
+    items: List[PredictionInput]
 
 
 class PredictionOutput(BaseModel):
-    """
-    Output of prediction aligned with architecture specification.
-    
-    Format from architecture spec:
-    {
-      "class_name": "com.example.UserService",
-      "risk_score": 0.75,
-      "risk_level": "high",
-      "uncertainty": 0.12,
-      "top_k_recommendations": [...],
-      "shap_values": {...},
-      "explanation": "..."
-    }
-    """
+    """Output of prediction."""
     class_name: str
     risk_score: float
     risk_level: str
+    prediction: int
     uncertainty: Optional[float] = None
-    top_k_recommendations: Optional[List[dict]] = None
-    shap_values: Optional[dict] = None
+    shap_values: Optional[Dict[str, float]] = None
     explanation: Optional[str] = None
+
+
+class BatchPredictionOutput(BaseModel):
+    """Output for batch predictions."""
+    predictions: List[PredictionOutput]
+    top_k: Optional[List[PredictionOutput]] = None
+
+
+class TrainResponse(BaseModel):
+    """Response from training endpoint."""
+    status: str
+    message: str
+    accuracy: Optional[float] = None
+    num_features: Optional[int] = None
 
 
 @app.get("/")
 def root():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "ML Service"}
+    """Root endpoint."""
+    return {"status": "healthy", "service": "S5 ML Service"}
 
 
 @app.get("/health")
@@ -115,49 +106,89 @@ def health():
     model_loaded = model is not None
     return {
         "status": "healthy" if model_loaded else "degraded",
-        "model_loaded": model_loaded
+        "model_loaded": model_loaded,
+        "num_features": len(feature_names) if feature_names else 0
     }
+
+
+@app.get("/api/v1/features")
+def get_features():
+    """Get list of expected feature names."""
+    if feature_names is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    return {"features": feature_names, "count": len(feature_names)}
+
+
+@app.post("/api/v1/train", response_model=TrainResponse)
+def train_model():
+    """Trigger model training from S4 data."""
+    global model, feature_names, shap_explainer
+    
+    try:
+        from src.train_model import main as run_training
+        run_training()
+        
+        # Reload model after training
+        model_file = os.path.join(MODEL_PATH, "model.pkl")
+        feature_file = os.path.join(MODEL_PATH, "feature_names.pkl")
+        
+        if os.path.exists(model_file):
+            model = joblib.load(model_file)
+            if os.path.exists(feature_file):
+                feature_names = joblib.load(feature_file)
+            
+            return TrainResponse(
+                status="success",
+                message="Model trained successfully",
+                num_features=len(feature_names) if feature_names else 0
+            )
+        else:
+            return TrainResponse(
+                status="error",
+                message="Training completed but model file not found"
+            )
+    except Exception as e:
+        logger.error(f"Training failed: {e}")
+        return TrainResponse(
+            status="error",
+            message=str(e)
+        )
 
 
 @app.post("/api/v1/predict", response_model=PredictionOutput)
 def predict(input_data: PredictionInput):
-    """
-    Predict code file risk.
-    
-    Returns:
-        - class_name: "risky" or "safe"
-        - risk_score: probability of being risky (0.0 to 1.0)
-        - risk_level: "low", "medium", or "high" based on risk_score
-    """
+    """Predict risk for a single class."""
     if model is None:
         raise HTTPException(
             status_code=503,
-            detail="Model not loaded. Run train_model.py first."
+            detail="Model not loaded. Call /api/v1/train first."
         )
     
-    # Prepare features in the correct order (must match train.csv columns)
-    features = [
-        input_data.lines_modified,
-        input_data.complexity,
-        input_data.author_type_Bot,
-        input_data.author_type_Junior,
-        input_data.author_type_Senior,
-        input_data.file_type_java,
-        input_data.file_type_py,
-        input_data.file_type_xml,
-        input_data.churn,
-        input_data.num_authors,
-        input_data.bug_fix_proximity,
-    ]
+    # Build feature vector from input
+    features_dict = input_data.features
     
-    # Get prediction and probability
-    prediction = model.predict([features])[0]
-    probabilities = model.predict_proba([features])[0]
+    # Create feature array matching expected order
+    feature_vector = []
+    missing_features = []
     
-    # risk_score is the probability of class 1 (risky)
-    risk_score = float(probabilities[1])
+    for fname in feature_names:
+        if fname in features_dict:
+            feature_vector.append(features_dict[fname])
+        else:
+            feature_vector.append(0.0)  # Default to 0 for missing features
+            missing_features.append(fname)
     
-    # Determine risk level based on PDF specification (3 levels)
+    if missing_features and len(missing_features) < len(feature_names) // 2:
+        logger.debug(f"Missing features defaulted to 0: {missing_features[:5]}...")
+    
+    # Predict
+    features_array = np.array([feature_vector])
+    prediction = int(model.predict(features_array)[0])
+    probabilities = model.predict_proba(features_array)[0]
+    
+    risk_score = float(probabilities[1]) if len(probabilities) > 1 else float(prediction)
+    
+    # Determine risk level
     if risk_score > 0.7:
         risk_level = "high"
     elif risk_score >= 0.3:
@@ -165,71 +196,92 @@ def predict(input_data: PredictionInput):
     else:
         risk_level = "low"
     
-    # Class name (use actual class name if provided, otherwise "risky"/"safe")
-    class_name = getattr(input_data, 'class_name', None) or ("risky" if prediction == 1 else "safe")
+    # Calculate uncertainty
+    uncertainty = 1.0 - abs(probabilities[0] - probabilities[1]) if len(probabilities) == 2 else 0.5
     
-    # Calculate uncertainty (simplified: based on probability distribution)
-    uncertainty = abs(probabilities[0] - probabilities[1]) / 2.0 if len(probabilities) == 2 else 0.0
+    # Compute SHAP values if explainer available
+    shap_values_dict = None
+    if shap_explainer is not None:
+        try:
+            shap_vals = shap_explainer.shap_values(features_array)
+            if isinstance(shap_vals, list):
+                shap_vals = shap_vals[1]  # Class 1 (risky)
+            shap_values_dict = dict(zip(feature_names, shap_vals[0].tolist()))
+            # Keep only top 10 by absolute value
+            sorted_shap = sorted(shap_values_dict.items(), key=lambda x: abs(x[1]), reverse=True)[:10]
+            shap_values_dict = dict(sorted_shap)
+        except Exception as e:
+            logger.warning(f"Could not compute SHAP: {e}")
     
     # Generate explanation
-    explanation = _generate_explanation(risk_score, risk_level, input_data)
-    
-    # SHAP values (placeholder - would need actual SHAP calculation)
-    shap_values = _calculate_shap_values(input_data, risk_score)
-    
-    # Top K recommendations (simplified - would come from batch prediction)
-    top_k_recommendations = [{
-        "class_name": class_name,
-        "risk_score": risk_score,
-        "priority": 1
-    }]
+    explanation = _generate_explanation(risk_score, risk_level, features_dict, shap_values_dict)
     
     return PredictionOutput(
-        class_name=class_name,
+        class_name=input_data.class_name or "unknown",
         risk_score=risk_score,
         risk_level=risk_level,
+        prediction=prediction,
         uncertainty=uncertainty,
-        top_k_recommendations=top_k_recommendations,
-        shap_values=shap_values,
+        shap_values=shap_values_dict,
         explanation=explanation
     )
 
 
-def _generate_explanation(risk_score: float, risk_level: str, input_data: PredictionInput) -> str:
-    """Generate human-readable explanation for the prediction."""
+@app.post("/api/v1/predict/batch", response_model=BatchPredictionOutput)
+def predict_batch(input_data: BatchPredictionInput, top_k: int = 10):
+    """Predict risk for multiple classes and return top-K risky ones."""
+    if model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Call /api/v1/train first."
+        )
+    
+    predictions = []
+    for item in input_data.items:
+        pred = predict(item)
+        predictions.append(pred)
+    
+    # Sort by risk score descending
+    sorted_predictions = sorted(predictions, key=lambda x: x.risk_score, reverse=True)
+    top_k_list = sorted_predictions[:top_k]
+    
+    return BatchPredictionOutput(
+        predictions=predictions,
+        top_k=top_k_list
+    )
+
+
+def _generate_explanation(
+    risk_score: float, 
+    risk_level: str, 
+    features: Dict[str, float],
+    shap_values: Optional[Dict[str, float]] = None
+) -> str:
+    """Generate human-readable explanation."""
     factors = []
     
-    if input_data.complexity > 10:
-        factors.append(f"High complexity ({input_data.complexity:.1f})")
-    if input_data.bug_fix_proximity > 0.7:
-        factors.append("High proximity to bug-fix commits")
-    if input_data.churn > 50:
-        factors.append(f"High code churn ({input_data.churn:.0f})")
+    # Use SHAP values if available
+    if shap_values:
+        top_factors = sorted(shap_values.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+        for feat, val in top_factors:
+            if abs(val) > 0.01:
+                direction = "increases" if val > 0 else "decreases"
+                factors.append(f"{feat} {direction} risk ({val:.3f})")
+    
+    # Fallback to feature values
+    if not factors:
+        if features.get('complexity', 0) > 5:
+            factors.append(f"High complexity ({features.get('complexity', 0):.1f})")
+        if features.get('churn', 0) > 50:
+            factors.append(f"High code churn ({features.get('churn', 0):.0f})")
+        if features.get('bug_fix_proximity', 0) > 200:
+            factors.append("Recent bug-fix activity")
     
     if factors:
-        return f"High risk due to: {', '.join(factors)}"
-    else:
-        return f"Risk level: {risk_level} (score: {risk_score:.2f})"
-
-
-def _calculate_shap_values(input_data: PredictionInput, risk_score: float) -> dict:
-    """
-    Calculate SHAP values for feature contributions.
-    Placeholder implementation - would need actual SHAP library integration.
-    """
-    # Simplified: proportional contribution based on feature values
-    total_impact = abs(input_data.complexity) + abs(input_data.churn) + abs(input_data.bug_fix_proximity)
-    
-    if total_impact > 0:
-        return {
-            "loc": round(input_data.lines_modified / max(total_impact, 1) * risk_score, 3),
-            "cyclomatic_complexity": round(input_data.complexity / max(total_impact, 1) * risk_score, 3),
-            "churn": round(input_data.churn / max(total_impact, 1) * risk_score, 3),
-            "bug_fix_proximity": round(input_data.bug_fix_proximity / max(total_impact, 1) * risk_score, 3)
-        }
-    return {}
+        return f"Risk factors: {', '.join(factors)}"
+    return f"Overall risk: {risk_level} (score: {risk_score:.2f})"
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

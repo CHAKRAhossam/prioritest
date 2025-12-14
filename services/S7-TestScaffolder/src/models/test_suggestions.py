@@ -43,3 +43,4 @@ class ClassSuggestions(BaseModel):
     total_suggestions: int = Field(0, description="Nombre total de suggestions")
     coverage_estimate: float = Field(0.0, description="Estimation de couverture de test", example=0.75)
 
+
