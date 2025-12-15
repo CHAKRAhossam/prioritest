@@ -1,6 +1,69 @@
 version: '3.8'
 
 services:
+  # ============================================
+  # INFRASTRUCTURE SERVICES
+  # ============================================
+
+  # Discovery Server (Eureka)
+  discovery-server:
+    build:
+      context: ./infrastructure/discovery-server
+      dockerfile: Dockerfile
+    container_name: prioritest-discovery-server
+    ports:
+      - "8761:8761"
+    environment:
+      SERVER_PORT: 8761
+      EUREKA_USER: eureka
+      EUREKA_PASSWORD: eureka123
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://eureka:eureka123@localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # API Gateway (Spring Cloud Gateway)
+  api-gateway:
+    build:
+      context: ./services/S0-ApiGateway
+      dockerfile: Dockerfile
+    container_name: prioritest-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_PORT: 8080
+      EUREKA_URI: http://discovery-server:8761/eureka/
+      EUREKA_USER: eureka
+      EUREKA_PASSWORD: eureka123
+      # Service URLs (for direct routing without Eureka)
+      S1_URL: http://collecte-depots:8001
+      S2_URL: http://analyse-statique:8081
+      S3_URL: http://historique-tests:8081
+      S4_URL: http://pretraitement-features:8000
+      S5_URL: http://ml-service:8001
+      S6_URL: http://moteur-priorisation:8006
+      S7_URL: http://test-scaffolder:8007
+      S9_URL: http://integrations:8009
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # DATA SERVICES
+  # ============================================
+
   # Base de données
   postgres:
     image: timescale/timescaledb:latest-pg15
@@ -108,6 +171,9 @@ services:
       APP_NAME: CollecteDepots
       LOG_LEVEL: INFO
       ENVIRONMENT: production
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: collecte-depots
       # Server
       HOST: 0.0.0.0
       PORT: 8001
@@ -156,6 +222,7 @@ services:
       - kafka
       - postgres
       - minio
+      - discovery-server
     networks:
       - prioritest-network
     healthcheck:
@@ -174,6 +241,8 @@ services:
     ports:
       - "8081:8081"
     environment:
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
       # Database (optional - uncomment when needed)
       # SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/prioritest
       # SPRING_DATASOURCE_USERNAME: prioritest
@@ -191,6 +260,7 @@ services:
     depends_on:
       - kafka
       - postgres
+      - discovery-server
     networks:
       - prioritest-network
     healthcheck:
@@ -209,6 +279,8 @@ services:
     ports:
       - "8082:8081"
     environment:
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
       # Application
       APP_NAME: HistoriqueTests
       LOG_LEVEL: INFO
@@ -233,6 +305,7 @@ services:
       - kafka
       - postgres
       - minio
+      - discovery-server
     networks:
       - prioritest-network
     healthcheck:
@@ -254,6 +327,9 @@ services:
       # Application
       APP_NAME: PretraitementFeatures
       LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: pretraitement-features
       # Database (pour acceder a S3)
       DATABASE_URL: postgresql://prioritest:prioritest@postgres:5432/prioritest
       # Feast Feature Store
@@ -273,6 +349,7 @@ services:
       - postgres
       - kafka
       - historique-tests
+      - discovery-server
     networks:
       - prioritest-network
     healthcheck:
@@ -294,6 +371,9 @@ services:
       # Application
       APP_NAME: MLService
       LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: ml-service
       # S4 Data path (mounted volume)
       DATA_PATH: /app/data
       # Model storage
@@ -305,6 +385,7 @@ services:
       - pretraitement_features_data:/app/data:ro
     depends_on:
       - pretraitement-features
+      - discovery-server
     networks:
       - prioritest-network
     healthcheck:
@@ -326,6 +407,9 @@ services:
       # Application
       APP_NAME: MoteurPriorisation
       LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: moteur-priorisation
       # S5 ML Service
       ML_SERVICE_URL: http://ml-service:8001
       # Database
@@ -335,6 +419,7 @@ services:
     depends_on:
       - ml-service
       - postgres
+      - discovery-server
     networks:
       - prioritest-network
     healthcheck:
@@ -356,6 +441,9 @@ services:
       # Application
       APP_NAME: TestScaffolder
       LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: test-scaffolder
       # S6 Prioritization Service
       PRIORITIZATION_SERVICE_URL: http://moteur-priorisation:8006
       # S1 for code fetching
@@ -364,6 +452,7 @@ services:
       GIT_REPO_URL: ""
     depends_on:
       - moteur-priorisation
+      - discovery-server
     networks:
       - prioritest-network
     healthcheck:
