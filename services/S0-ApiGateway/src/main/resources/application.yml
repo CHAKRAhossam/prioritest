@@ -1,0 +1,259 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  
+  cloud:
+    gateway:
+      # Enable service discovery
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      
+      # Default filters for all routes
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      
+      # Route definitions
+      routes:
+        # ==========================================
+        # S1 - CollecteDepots (Python/FastAPI)
+        # ==========================================
+        - id: s1-collecte-depots
+          uri: http://prioritest-collecte-depots:8001
+          predicates:
+            - Path=/api/s1/**
+          filters:
+            - RewritePath=/api/s1/(?<segment>.*), /$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s1CircuitBreaker
+                fallbackUri: forward:/fallback/s1
+        
+        # S1 Health
+        - id: s1-health
+          uri: http://prioritest-collecte-depots:8001
+          predicates:
+            - Path=/health/s1
+          filters:
+            - RewritePath=/health/s1, /health
+        
+        # ==========================================
+        # S2 - AnalyseStatique (Java/Spring)
+        # ==========================================
+        - id: s2-analyse-statique
+          uri: http://prioritest-analyse-statique:8081
+          predicates:
+            - Path=/api/s2/**
+          filters:
+            - RewritePath=/api/s2/(?<segment>.*), /$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s2CircuitBreaker
+                fallbackUri: forward:/fallback/s2
+        
+        # S2 Health
+        - id: s2-health
+          uri: http://prioritest-analyse-statique:8081
+          predicates:
+            - Path=/health/s2
+          filters:
+            - RewritePath=/health/s2, /actuator/health
+        
+        # ==========================================
+        # S3 - HistoriqueTests (Java/Spring)
+        # ==========================================
+        - id: s3-historique-tests
+          uri: http://prioritest-historique-tests:8081
+          predicates:
+            - Path=/api/s3/**
+          filters:
+            - RewritePath=/api/s3/(?<segment>.*), /api/$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s3CircuitBreaker
+                fallbackUri: forward:/fallback/s3
+        
+        # S3 Health
+        - id: s3-health
+          uri: http://prioritest-historique-tests:8081
+          predicates:
+            - Path=/health/s3
+          filters:
+            - RewritePath=/health/s3, /actuator/health
+        
+        # ==========================================
+        # S4 - PretraitementFeatures (Python/FastAPI)
+        # ==========================================
+        - id: s4-pretraitement
+          uri: http://prioritest-pretraitement-features:8000
+          predicates:
+            - Path=/api/s4/**
+          filters:
+            - RewritePath=/api/s4/(?<segment>.*), /$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s4CircuitBreaker
+                fallbackUri: forward:/fallback/s4
+        
+        # S4 Health
+        - id: s4-health
+          uri: http://prioritest-pretraitement-features:8000
+          predicates:
+            - Path=/health/s4
+          filters:
+            - RewritePath=/health/s4, /health
+        
+        # ==========================================
+        # S5 - MLService (Python/FastAPI)
+        # ==========================================
+        - id: s5-ml-service
+          uri: http://prioritest-ml-service:8001
+          predicates:
+            - Path=/api/s5/**
+          filters:
+            - RewritePath=/api/s5/(?<segment>.*), /api/v1/$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s5CircuitBreaker
+                fallbackUri: forward:/fallback/s5
+        
+        # S5 Health
+        - id: s5-health
+          uri: http://prioritest-ml-service:8001
+          predicates:
+            - Path=/health/s5
+          filters:
+            - RewritePath=/health/s5, /health
+        
+        # ==========================================
+        # S6 - MoteurPriorisation (Python/FastAPI)
+        # ==========================================
+        - id: s6-moteur-priorisation
+          uri: http://prioritest-moteur-priorisation:8006
+          predicates:
+            - Path=/api/s6/**
+          filters:
+            - RewritePath=/api/s6/(?<segment>.*), /api/v1/$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s6CircuitBreaker
+                fallbackUri: forward:/fallback/s6
+        
+        # S6 Health
+        - id: s6-health
+          uri: http://prioritest-moteur-priorisation:8006
+          predicates:
+            - Path=/health/s6
+          filters:
+            - RewritePath=/health/s6, /health
+        
+        # ==========================================
+        # S7 - TestScaffolder (Python/FastAPI)
+        # ==========================================
+        - id: s7-test-scaffolder
+          uri: http://prioritest-test-scaffolder:8007
+          predicates:
+            - Path=/api/s7/**
+          filters:
+            - RewritePath=/api/s7/(?<segment>.*), /api/v1/$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s7CircuitBreaker
+                fallbackUri: forward:/fallback/s7
+        
+        # S7 Health
+        - id: s7-health
+          uri: http://prioritest-test-scaffolder:8007
+          predicates:
+            - Path=/health/s7
+          filters:
+            - RewritePath=/health/s7, /health
+        
+        # ==========================================
+        # S9 - Integrations (Java/Spring)
+        # ==========================================
+        - id: s9-integrations
+          uri: http://prioritest-s9-integrations:8009
+          predicates:
+            - Path=/api/s9/**
+          filters:
+            - RewritePath=/api/s9/(?<segment>.*), /v1/$\{segment}
+            - name: CircuitBreaker
+              args:
+                name: s9CircuitBreaker
+                fallbackUri: forward:/fallback/s9
+        
+        # S9 Health
+        - id: s9-health
+          uri: http://prioritest-s9-integrations:8009
+          predicates:
+            - Path=/health/s9
+          filters:
+            - RewritePath=/health/s9, /v1/health
+
+# Eureka client configuration
+eureka:
+  client:
+    enabled: true
+    service-url:
+      defaultZone: http://eureka:eureka123@discovery-server:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    hostname: api-gateway
+
+# Resilience4j Circuit Breaker Configuration
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000
+        permittedNumberOfCallsInHalfOpenState: 5
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+    instances:
+      s1CircuitBreaker:
+        baseConfig: default
+      s2CircuitBreaker:
+        baseConfig: default
+      s3CircuitBreaker:
+        baseConfig: default
+      s4CircuitBreaker:
+        baseConfig: default
+      s5CircuitBreaker:
+        baseConfig: default
+      s6CircuitBreaker:
+        baseConfig: default
+      s7CircuitBreaker:
+        baseConfig: default
+      s9CircuitBreaker:
+        baseConfig: default
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 30s
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway,circuitbreakers
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+# Logging
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.web: INFO
+    reactor.netty: INFO
