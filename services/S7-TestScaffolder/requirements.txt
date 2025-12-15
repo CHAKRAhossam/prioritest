@@ -4,6 +4,9 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
+# Eureka Service Discovery
+py-eureka-client==0.11.10
+
 # AST Analysis Java
 # Note: tree-sitter-java nécessite une compilation manuelle
 # Pour l'instant, on utilise un parser basique avec regex
