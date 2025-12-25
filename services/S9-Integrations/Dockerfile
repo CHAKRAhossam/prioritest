@@ -33,9 +33,6 @@ RUN apk add --no-cache curl
 # Copy the built JAR from builder stage
 COPY --from=builder /app/target/*.jar app.jar
 
-# Copy wait-for-it script for container orchestration
-COPY --chmod=755 scripts/wait-for-it.sh /wait-for-it.sh
-
 # Change ownership to non-root user
 RUN chown -R appuser:appgroup /app
 

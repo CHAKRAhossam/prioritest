@@ -43,15 +43,29 @@ public class FlakinessService {
             String testName = parts[1];
             List<TestResult> testResults = entry.getValue();
             
-            TestFlakiness flakiness = calculateTestFlakiness(testClass, testName, testResults, windowStart, windowEnd);
-            flakinessRecords.add(flakiness);
+            // Group by repositoryId to calculate flakiness per repository
+            Map<String, List<TestResult>> resultsByRepo = new HashMap<>();
+            for (TestResult result : testResults) {
+                String repoId = result.getRepositoryId() != null ? result.getRepositoryId() : "default";
+                resultsByRepo.computeIfAbsent(repoId, k -> new ArrayList<>()).add(result);
+            }
+            
+            // Calculate flakiness for each repository
+            for (Map.Entry<String, List<TestResult>> repoEntry : resultsByRepo.entrySet()) {
+                String repositoryId = repoEntry.getKey();
+                List<TestResult> repoResults = repoEntry.getValue();
+                
+                TestFlakiness flakiness = calculateTestFlakiness(testClass, testName, repositoryId, repoResults, windowStart, windowEnd);
+                flakinessRecords.add(flakiness);
+            }
         }
         
         // Save or update flakiness records
         for (TestFlakiness flakiness : flakinessRecords) {
-            Optional<TestFlakiness> existing = flakinessRepository.findByTestClassAndTestName(
+            Optional<TestFlakiness> existing = flakinessRepository.findByTestClassAndTestNameAndRepositoryId(
                 flakiness.getTestClass(), 
-                flakiness.getTestName()
+                flakiness.getTestName(),
+                flakiness.getRepositoryId()
             );
             
             if (existing.isPresent()) {
@@ -68,6 +82,7 @@ public class FlakinessService {
                 existingFlakiness.setCalculatedAt(LocalDateTime.now());
                 flakinessRepository.save(existingFlakiness);
             } else {
+                flakiness.setCalculatedAt(LocalDateTime.now());
                 flakinessRepository.save(flakiness);
             }
         }
@@ -77,10 +92,12 @@ public class FlakinessService {
     }
     
     private TestFlakiness calculateTestFlakiness(String testClass, String testName, 
+                                                 String repositoryId,
                                                  List<TestResult> results, 
                                                  LocalDateTime windowStart, 
                                                  LocalDateTime windowEnd) {
         TestFlakiness flakiness = new TestFlakiness();
+        flakiness.setRepositoryId(repositoryId);
         flakiness.setTestClass(testClass);
         flakiness.setTestName(testName);
         flakiness.setWindowStart(windowStart);

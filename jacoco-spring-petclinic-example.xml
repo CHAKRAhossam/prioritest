@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report name="JaCoCo Coverage Report">
+  <package name="org/springframework/samples/petclinic/owner">
+    <class name="org/springframework/samples/petclinic/owner/Owner" sourcefilename="Owner.java">
+      <counter type="INSTRUCTION" missed="15" covered="85"/>
+      <counter type="BRANCH" missed="3" covered="12"/>
+      <counter type="LINE" missed="8" covered="42"/>
+      <counter type="COMPLEXITY" missed="2" covered="8"/>
+      <counter type="METHOD" missed="1" covered="7"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <class name="org/springframework/samples/petclinic/owner/Pet" sourcefilename="Pet.java">
+      <counter type="INSTRUCTION" missed="12" covered="88"/>
+      <counter type="BRANCH" missed="2" covered="10"/>
+      <counter type="LINE" missed="6" covered="44"/>
+      <counter type="COMPLEXITY" missed="1" covered="9"/>
+      <counter type="METHOD" missed="0" covered="8"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <class name="org/springframework/samples/petclinic/owner/OwnerController" sourcefilename="OwnerController.java">
+      <counter type="INSTRUCTION" missed="25" covered="175"/>
+      <counter type="BRANCH" missed="5" covered="20"/>
+      <counter type="LINE" missed="12" covered="58"/>
+      <counter type="COMPLEXITY" missed="3" covered="17"/>
+      <counter type="METHOD" missed="2" covered="10"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <class name="org/springframework/samples/petclinic/owner/OwnerRepository" sourcefilename="OwnerRepository.java">
+      <counter type="INSTRUCTION" missed="8" covered="32"/>
+      <counter type="BRANCH" missed="2" covered="6"/>
+      <counter type="LINE" missed="4" covered="16"/>
+      <counter type="COMPLEXITY" missed="1" covered="4"/>
+      <counter type="METHOD" missed="0" covered="4"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+  <package name="org/springframework/samples/petclinic/visit">
+    <class name="org/springframework/samples/petclinic/visit/Visit" sourcefilename="Visit.java">
+      <counter type="INSTRUCTION" missed="10" covered="70"/>
+      <counter type="BRANCH" missed="2" covered="8"/>
+      <counter type="LINE" missed="5" covered="35"/>
+      <counter type="COMPLEXITY" missed="1" covered="7"/>
+      <counter type="METHOD" missed="0" covered="6"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <class name="org/springframework/samples/petclinic/visit/VisitController" sourcefilename="VisitController.java">
+      <counter type="INSTRUCTION" missed="18" covered="82"/>
+      <counter type="BRANCH" missed="4" covered="16"/>
+      <counter type="LINE" missed="9" covered="41"/>
+      <counter type="COMPLEXITY" missed="2" covered="14"/>
+      <counter type="METHOD" missed="1" covered="7"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+  <package name="org/springframework/samples/petclinic/vet">
+    <class name="org/springframework/samples/petclinic/vet/Vet" sourcefilename="Vet.java">
+      <counter type="INSTRUCTION" missed="8" covered="52"/>
+      <counter type="BRANCH" missed="1" covered="9"/>
+      <counter type="LINE" missed="4" covered="26"/>
+      <counter type="COMPLEXITY" missed="1" covered="5"/>
+      <counter type="METHOD" missed="0" covered="5"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <class name="org/springframework/samples/petclinic/vet/VetController" sourcefilename="VetController.java">
+      <counter type="INSTRUCTION" missed="5" covered="45"/>
+      <counter type="BRANCH" missed="1" covered="9"/>
+      <counter type="LINE" missed="2" covered="23"/>
+      <counter type="COMPLEXITY" missed="0" covered="9"/>
+      <counter type="METHOD" missed="0" covered="5"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+  <package name="org/springframework/samples/petclinic/model">
+    <class name="org/springframework/samples/petclinic/model/BaseEntity" sourcefilename="BaseEntity.java">
+      <counter type="INSTRUCTION" missed="2" covered="8"/>
+      <counter type="BRANCH" missed="0" covered="2"/>
+      <counter type="LINE" missed="1" covered="4"/>
+      <counter type="COMPLEXITY" missed="0" covered="1"/>
+      <counter type="METHOD" missed="0" covered="2"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <class name="org/springframework/samples/petclinic/model/NamedEntity" sourcefilename="NamedEntity.java">
+      <counter type="INSTRUCTION" missed="1" covered="9"/>
+      <counter type="BRANCH" missed="0" covered="2"/>
+      <counter type="LINE" missed="1" covered="5"/>
+      <counter type="COMPLEXITY" missed="0" covered="1"/>
+      <counter type="METHOD" missed="0" covered="2"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+</report>
+
+
+

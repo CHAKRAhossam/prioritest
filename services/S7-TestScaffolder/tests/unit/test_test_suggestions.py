@@ -195,3 +195,13 @@ def test_estimate_coverage(suggestions_service, sample_class_analysis):
         assert suggestions.coverage_estimate > 0.0
 
 
+
+
+
+
+
+
+
+
+
+

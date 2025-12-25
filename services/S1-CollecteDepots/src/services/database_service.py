@@ -1,5 +1,6 @@
 """Database service for PostgreSQL/TimescaleDB operations."""
 import logging
+from typing import List, Optional
 from contextlib import contextmanager
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
@@ -168,4 +169,55 @@ class DatabaseService:
             session.refresh(metrics)
             logger.info(f"Stored metrics for {metrics_data['repository_id']} at {metrics_data['commit_sha']}")
             return metrics
+    
+    def list_repositories(self, source: str = None) -> List[Repository]:
+        """List all repositories, optionally filtered by source."""
+        with self.get_session() as session:
+            query = session.query(Repository)
+            if source:
+                query = query.filter(Repository.source == source)
+            repos = query.order_by(Repository.created_at.desc()).all()
+            # Expunge all objects from session to make them accessible after session closes
+            for repo in repos:
+                session.expunge(repo)
+            logger.info(f"Listed {len(repos)} repositories" + (f" from {source}" if source else ""))
+            return repos
+    
+    def get_repository_by_id(self, repository_id: str) -> Optional[Repository]:
+        """Get a repository by its ID."""
+        with self.get_session() as session:
+            repo = session.query(Repository).filter(Repository.id == repository_id).first()
+            return repo
+    
+    def delete_repository(self, repository_id: str) -> bool:
+        """Delete a repository and all its associated data."""
+        with self.get_session() as session:
+            try:
+                repo = session.query(Repository).filter(Repository.id == repository_id).first()
+                if not repo:
+                    logger.warning(f"Repository {repository_id} not found for deletion")
+                    return False
+                
+                # Delete associated commits
+                session.query(Commit).filter(Commit.repository_id == repository_id).delete()
+                
+                # Delete associated issues
+                session.query(Issue).filter(Issue.repository_id == repository_id).delete()
+                
+                # Delete associated artifacts
+                session.query(CIArtifact).filter(CIArtifact.repository_id == repository_id).delete()
+                
+                # Delete associated metrics
+                session.query(RepositoryMetadata).filter(RepositoryMetadata.repository_id == repository_id).delete()
+                
+                # Delete the repository itself
+                session.delete(repo)
+                session.commit()
+                
+                logger.info(f"Deleted repository {repository_id} and all associated data")
+                return True
+            except Exception as e:
+                logger.error(f"Error deleting repository {repository_id}: {e}")
+                session.rollback()
+                raise
 

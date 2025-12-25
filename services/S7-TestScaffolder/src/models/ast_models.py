@@ -61,3 +61,13 @@ class ClassAnalysis(BaseModel):
     dependencies: List[str] = Field(default_factory=list, description="Dépendances (types utilisés)", example=["UserRepository", "EmailService"])
 
 
+
+
+
+
+
+
+
+
+
+

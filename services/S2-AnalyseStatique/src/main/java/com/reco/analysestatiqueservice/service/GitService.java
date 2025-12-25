@@ -5,6 +5,9 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
+import org.eclipse.jgit.transport.CredentialItem;
+import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.URIish;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,10 +56,45 @@ public class GitService {
         }
         
         // Clone repository
+        // For public repositories, use a credentials provider that allows anonymous access
+        // For private repositories, credentials would need to be configured via environment variables
+        CredentialsProvider credentialsProvider = CredentialsProvider.getDefault();
+        if (credentialsProvider == null) {
+            // If no default provider, create one that allows anonymous access for public repos
+            // This will work for public GitHub/GitLab repositories
+            credentialsProvider = new CredentialsProvider() {
+                @Override
+                public boolean isInteractive() {
+                    return false;
+                }
+                
+                @Override
+                public boolean supports(CredentialItem... items) {
+                    // Support all credential items but return empty values for public repos
+                    return true;
+                }
+                
+                @Override
+                public boolean get(org.eclipse.jgit.transport.URIish uri, CredentialItem... items) {
+                    // For public repositories, we don't need credentials
+                    // Return true to indicate we "provided" credentials (empty ones)
+                    for (CredentialItem item : items) {
+                        if (item instanceof CredentialItem.Username) {
+                            ((CredentialItem.Username) item).setValue("");
+                        } else if (item instanceof CredentialItem.Password) {
+                            ((CredentialItem.Password) item).setValue(new char[0]);
+                        }
+                    }
+                    return true;
+                }
+            };
+        }
+        
         try (Git git = Git.cloneRepository()
                 .setURI(repositoryUrl)
                 .setDirectory(repoDir)
                 .setCloneAllBranches(false)
+                .setCredentialsProvider(credentialsProvider)
                 .call()) {
             
             logger.debug("Repository cloned to: {}", repoDir.getAbsolutePath());

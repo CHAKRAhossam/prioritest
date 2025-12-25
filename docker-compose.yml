@@ -374,6 +374,8 @@ services:
       # Eureka
       EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
       HOSTNAME: ml-service
+      # S4 Service URL (for fetching features)
+      S4_PRETRAITEMENT_FEATURES_URL: http://pretraitement-features:8000
       # S4 Data path (mounted volume)
       DATA_PATH: /app/data
       # Model storage
@@ -457,6 +459,30 @@ services:
       - prioritest-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S8 - DashboardQualite (Frontend)
+  s8-dashboard-qualite:
+    build:
+      context: ./services/S8-DashboardQualite/test-priority-hub
+      dockerfile: Dockerfile
+      args:
+        # API Gateway URL - use localhost since browser makes requests from user's machine
+        # Note: Don't include /api in base URL as client.ts already adds it
+        VITE_API_URL: http://localhost:8080
+    container_name: prioritest-s8-dashboard-qualite
+    ports:
+      - "3000:8080"
+    depends_on:
+      - api-gateway
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080"]
       interval: 30s
       timeout: 10s
       retries: 3

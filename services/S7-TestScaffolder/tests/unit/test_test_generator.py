@@ -150,3 +150,13 @@ def test_to_camel_case(test_generator):
     assert test_generator._to_camel_case("") == ""
 
 
+
+
+
+
+
+
+
+
+
+
