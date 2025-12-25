@@ -60,9 +60,9 @@ public class SecurityConfig {
             .sessionManagement(session -> 
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         
-        // For local profile, permit all requests
-        if ("local".equals(activeProfile)) {
-            log.info("Running in LOCAL profile - security disabled for testing");
+        // For local or dev profile, permit all requests (no Keycloak required)
+        if ("local".equals(activeProfile) || "dev".equals(activeProfile)) {
+            log.info("Running in {} profile - security disabled for testing", activeProfile);
             http
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .headers(headers -> headers.frameOptions(frame -> frame.disable())); // For H2 console

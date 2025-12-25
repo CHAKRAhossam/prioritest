@@ -1,0 +1,6 @@
+com\prioritest\gateway\ApiGatewayApplication.class
+com\prioritest\gateway\filter\LoggingFilter.class
+com\prioritest\gateway\config\GatewayConfig.class
+com\prioritest\gateway\controller\FallbackController.class
+com\prioritest\gateway\controller\HealthController.class
+com\prioritest\gateway\config\CorsConfig.class

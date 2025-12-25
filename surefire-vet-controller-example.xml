@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.springframework.samples.petclinic.vet.VetControllerTests" 
+           tests="5" 
+           failures="0" 
+           errors="0" 
+           skipped="1" 
+           time="0.156">
+  <properties>
+    <property name="java.version" value="17"/>
+    <property name="maven.compiler.source" value="17"/>
+    <property name="maven.compiler.target" value="17"/>
+  </properties>
+  
+  <!-- Test réussi -->
+  <testcase name="testShowVetList" 
+            classname="org.springframework.samples.petclinic.vet.VetControllerTests" 
+            time="0.034"/>
+  
+  <!-- Test réussi -->
+  <testcase name="testInitNewVetForm" 
+            classname="org.springframework.samples.petclinic.vet.VetControllerTests" 
+            time="0.023"/>
+  
+  <!-- Test réussi -->
+  <testcase name="testProcessNewVetFormSuccess" 
+            classname="org.springframework.samples.petclinic.vet.VetControllerTests" 
+            time="0.045"/>
+  
+  <!-- Test réussi -->
+  <testcase name="testProcessNewVetFormHasErrors" 
+            classname="org.springframework.samples.petclinic.vet.VetControllerTests" 
+            time="0.028"/>
+  
+  <!-- Test ignoré -->
+  <testcase name="testDeleteVet" 
+            classname="org.springframework.samples.petclinic.vet.VetControllerTests" 
+            time="0.0">
+    <skipped/>
+  </testcase>
+</testsuite>
+
+
+

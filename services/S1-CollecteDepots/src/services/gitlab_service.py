@@ -32,6 +32,59 @@ class GitLabService:
         return f"gitlab_{project_id}"
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def get_branches(self, project_id: str) -> List[Dict[str, Any]]:
+        """
+        Get list of branches for a GitLab project.
+        
+        Args:
+            project_id: GitLab project ID or path (e.g., "group/project")
+        
+        Returns:
+            List of branch information with name, commit_sha, and protected status
+        """
+        if not self.client:
+            logger.error("GitLab client not initialized")
+            return []
+        
+        try:
+            # Try to get project by ID or path
+            try:
+                project = self.client.projects.get(project_id)
+            except:
+                # If ID fails, try searching by path
+                projects = self.client.projects.list(search=project_id)
+                if projects:
+                    project = projects[0]
+                else:
+                    logger.error(f"Project {project_id} not found")
+                    return []
+            
+            branches = project.branches.list(all=True)
+            
+            branch_list = []
+            for branch in branches:
+                branch_list.append({
+                    'name': branch.name,
+                    'commit_sha': branch.commit.get('id', '') if hasattr(branch, 'commit') else '',
+                    'protected': branch.protected if hasattr(branch, 'protected') else False
+                })
+            
+            # Sort: main/master first, then alphabetically
+            def sort_key(b):
+                name = b['name'].lower()
+                if name == 'main' or name == 'master':
+                    return (0, name)
+                return (1, name)
+            
+            branch_list.sort(key=sort_key)
+            logger.info(f"Retrieved {len(branch_list)} branches for {project_id}")
+            return branch_list
+            
+        except Exception as e:
+            logger.error(f"Error getting GitLab branches: {e}")
+            return []
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def collect_commits(
         self,
         project_id: str,
@@ -86,6 +139,11 @@ class GitLabService:
                     except Exception as e:
                         logger.warning(f"Could not get file changes for commit {commit.id}: {e}")
                     
+                    # Get project URL for repository cloning (GitLab uses http_url_to_repo or ssh_url_to_repo)
+                    project_url = getattr(project, 'http_url_to_repo', None) or getattr(project, 'ssh_url_to_repo', None) or project.web_url
+                    if project_url and not project_url.endswith('.git'):
+                        project_url = project_url + '.git'
+                    
                     event = CommitEvent(
                         event_id=f"evt_gitlab_{commit.id}",
                         repository_id=repository_id,
@@ -99,7 +157,8 @@ class GitLabService:
                             source="gitlab",
                             branch=branch,
                             extra={
-                                "web_url": commit.web_url
+                                "web_url": commit.web_url,
+                                "repository_url": project_url  # Add full repo URL for S2
                             }
                         )
                     )
@@ -179,6 +238,65 @@ class GitLabService:
         except Exception as e:
             logger.error(f"Error collecting issues: {e}")
             return []
+    
+    def parse_webhook(self, payload: Dict[str, Any], event_type: str) -> Optional[CommitEvent]:
+        """
+        Parse GitLab webhook payload.
+        
+        Args:
+            payload: Webhook JSON payload
+            event_type: Webhook event type (push, merge_request, issue)
+            
+        Returns:
+            CommitEvent or None
+        """
+        try:
+            if event_type == "push":
+                project = payload.get("project", {})
+                commits = payload.get("commits", [])
+                
+                if not commits:
+                    return None
+                
+                # Process the head commit
+                commit = commits[-1] if commits else {}
+                
+                repository_id = self._get_repo_id(str(project.get("id", "")))
+                
+                files_changed = []
+                for file in commit.get("added", []):
+                    files_changed.append(FileChange(path=file, status="added"))
+                for file in commit.get("modified", []):
+                    files_changed.append(FileChange(path=file, status="modified"))
+                for file in commit.get("removed", []):
+                    files_changed.append(FileChange(path=file, status="deleted"))
+                
+                return CommitEvent(
+                    event_id=f"evt_webhook_{commit.get('id', '')}",
+                    repository_id=repository_id,
+                    commit_sha=commit.get("id", ""),
+                    commit_message=commit.get("message", ""),
+                    author_email=commit.get("author", {}).get("email", ""),
+                    author_name=commit.get("author", {}).get("name", ""),
+                    timestamp=datetime.fromisoformat(commit.get("timestamp", "").replace("Z", "+00:00")),
+                    files_changed=files_changed,
+                    metadata=Metadata(
+                        source="gitlab",
+                        branch=payload.get("ref", "").replace("refs/heads/", ""),
+                        extra={
+                            "user_name": payload.get("user_name", ""),
+                            "project": project.get("name", "")
+                        }
+                    )
+                )
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error parsing GitLab webhook: {e}")
+            return None
+
+
     
     def parse_webhook(self, payload: Dict[str, Any], event_type: str) -> Optional[CommitEvent]:
         """

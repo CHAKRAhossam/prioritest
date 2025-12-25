@@ -4,7 +4,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
@@ -19,7 +18,6 @@ import java.util.Map;
 @RequestMapping("/api/health")
 public class HealthController {
 
-    private final WebClient webClient = WebClient.builder().build();
 
     /**
      * Gateway health check.
@@ -37,49 +35,27 @@ public class HealthController {
 
     /**
      * Aggregated health check for all services.
+     * Note: Individual service health checks are disabled due to network issues.
+     * Services can be checked directly via their health endpoints.
      */
     @GetMapping("/all")
     public Mono<ResponseEntity<Map<String, Object>>> allServicesHealth() {
         Map<String, Object> response = new HashMap<>();
         response.put("gateway", "UP");
         response.put("timestamp", LocalDateTime.now().toString());
-        
-        Map<String, String> services = new HashMap<>();
-        services.put("s1-collecte", "http://prioritest-s1-collecte:8001/health");
-        services.put("s2-analyse", "http://prioritest-s2-analyse:8081/actuator/health");
-        services.put("s3-historique", "http://prioritest-s3-historique:8082/actuator/health");
-        services.put("s4-features", "http://prioritest-s4-features:8004/health");
-        services.put("s5-ml", "http://prioritest-s5-ml:8005/health");
-        services.put("s6-prioritization", "http://prioritest-s6-prioritization:8006/health");
-        services.put("s7-scaffolder", "http://prioritest-s7-scaffolder:8007/health");
-        services.put("s9-integrations", "http://prioritest-s9-integrations:8009/v1/health");
-
-        Map<String, Object> serviceStatuses = new HashMap<>();
-        
-        for (Map.Entry<String, String> entry : services.entrySet()) {
-            try {
-                serviceStatuses.put(entry.getKey(), checkServiceHealth(entry.getValue()));
-            } catch (Exception e) {
-                serviceStatuses.put(entry.getKey(), "DOWN");
-            }
-        }
-        
-        response.put("services", serviceStatuses);
+        response.put("message", "Individual service health checks disabled. Check services directly via their endpoints.");
+        response.put("services", Map.of(
+            "s1-collecte", "http://localhost:8001/health",
+            "s2-analyse", "http://localhost:8081/actuator/health",
+            "s3-historique", "http://localhost:8082/actuator/health",
+            "s4-features", "http://localhost:8004/health",
+            "s5-ml", "http://localhost:8005/health",
+            "s6-prioritization", "http://localhost:8006/health",
+            "s7-scaffolder", "http://localhost:8007/health",
+            "s9-integrations", "http://localhost:8009/v1/health"
+        ));
         
         return Mono.just(ResponseEntity.ok(response));
-    }
-
-    private String checkServiceHealth(String url) {
-        try {
-            webClient.get()
-                .uri(url)
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
-            return "UP";
-        } catch (Exception e) {
-            return "DOWN";
-        }
     }
 
     /**

@@ -17,6 +17,12 @@ public interface MutationResultRepository extends JpaRepository<MutationResult, 
     
     List<MutationResult> findByCommitShaAndClassName(String commitSha, String className);
     
+    @Query("SELECT mr FROM MutationResult mr WHERE mr.className = :className AND mr.repositoryId = :repositoryId")
+    List<MutationResult> findByClassNameAndRepositoryId(
+        @Param("className") String className,
+        @Param("repositoryId") String repositoryId
+    );
+    
     List<MutationResult> findByStatus(MutationResult.MutationStatus status);
     
     @Query("SELECT mr FROM MutationResult mr WHERE mr.commitSha = :commitSha AND mr.status = :status")

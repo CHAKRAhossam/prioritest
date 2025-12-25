@@ -182,6 +182,19 @@ springdoc:
   paths-to-match: /v1/**
 
 ---
+# Dev Profile - Disable OAuth2 for development
+spring:
+  config:
+    activate:
+      on-profile: dev
+  
+  # Disable OAuth2 Security for dev (Keycloak not required)
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
+
+---
 # Production Profile
 spring:
   config:

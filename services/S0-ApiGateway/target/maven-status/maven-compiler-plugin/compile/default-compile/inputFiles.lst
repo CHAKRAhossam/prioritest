@@ -1,0 +1,6 @@
+C:\PRIORITEST\services\S0-ApiGateway\src\main\java\com\prioritest\gateway\controller\HealthController.java
+C:\PRIORITEST\services\S0-ApiGateway\src\main\java\com\prioritest\gateway\ApiGatewayApplication.java
+C:\PRIORITEST\services\S0-ApiGateway\src\main\java\com\prioritest\gateway\config\CorsConfig.java
+C:\PRIORITEST\services\S0-ApiGateway\src\main\java\com\prioritest\gateway\controller\FallbackController.java
+C:\PRIORITEST\services\S0-ApiGateway\src\main\java\com\prioritest\gateway\filter\LoggingFilter.java
+C:\PRIORITEST\services\S0-ApiGateway\src\main\java\com\prioritest\gateway\config\GatewayConfig.java

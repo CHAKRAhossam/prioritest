@@ -44,3 +44,13 @@ class ClassSuggestions(BaseModel):
     coverage_estimate: float = Field(0.0, description="Estimation de couverture de test", example=0.75)
 
 
+
+
+
+
+
+
+
+
+
+

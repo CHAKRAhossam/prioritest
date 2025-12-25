@@ -73,15 +73,19 @@ async def prioritize(
     """
     try:
         # Étape 1: Récupérer les prédictions depuis S5 (MLService)
+        # Pass branch to ML service for branch-specific predictions
         predictions = await ml_client.get_predictions(
             repository_id=request.repository_id,
-            sprint_id=request.sprint_id
+            sprint_id=request.sprint_id,
+            branch=request.branch
         )
         
         if not predictions:
             raise HTTPException(
                 status_code=404,
-                detail=f"Aucune prédiction trouvée pour le repository {request.repository_id}"
+                detail=f"Aucune prédiction trouvée pour le repository {request.repository_id}. "
+                       f"Vérifiez que S2 a analysé le repository et que S5 peut générer des prédictions. "
+                       f"L'endpoint S5 /api/v1/predictions n'existe pas encore - utilisez S4 pour préparer les features puis S5 /api/v1/predict/batch."
             )
         
         # Étape 2: Calculer l'effort et les scores effort-aware
@@ -254,5 +258,13 @@ async def get_prioritization(
     )
     
     return await prioritize(request, strategy=strategy)
+
+
+
+
+
+    return await prioritize(request, strategy=strategy)
+
+
 
 
