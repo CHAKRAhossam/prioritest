@@ -34,7 +34,9 @@ services:
 
   # Jenkins for CI/CD
   jenkins:
-    image: jenkins/jenkins:lts
+    build:
+      context: ./infrastructure/jenkins
+      dockerfile: Dockerfile
     container_name: prioritest-jenkins
     user: root
     ports:

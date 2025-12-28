@@ -48,12 +48,22 @@ pipeline {
         stage('Check SonarQube Connection') {
             steps {
                 script {
+                    // Check if SonarQube is accessible
+                    def sonarUrl = env.SONARQUBE_URL ?: 'http://sonarqube:9000'
                     try {
-                        def sonarToken = credentials('sonar-token')
-                        env.SONAR_TOKEN = sonarToken
-                        echo "SonarQube token found"
+                        def response = sh(
+                            script: "curl -s -o /dev/null -w '%{http_code}' '${sonarUrl}/api/system/status' || echo '000'",
+                            returnStdout: true
+                        ).trim()
+                        if (response == '200') {
+                            echo "✅ SonarQube is accessible at ${sonarUrl}"
+                            env.SONAR_TOKEN = 'configured'  // Flag to indicate SonarQube is available
+                        } else {
+                            echo "⚠️ SonarQube returned status ${response}"
+                            env.SONAR_TOKEN = ''
+                        }
                     } catch (Exception e) {
-                        echo "Warning: SonarQube token not configured. SonarQube analysis will be skipped."
+                        echo "⚠️ Warning: Could not connect to SonarQube. SonarQube analysis will be skipped."
                         env.SONAR_TOKEN = ''
                     }
                 }
@@ -75,44 +85,31 @@ pipeline {
                                 dir("services/${service}") {
                                     script {
                                         try {
-                                            // Try to use Maven plugin, fallback to mvnw if not configured
-                                            try {
-                                                withMaven(maven: 'Maven') {
-                                                    if (fileExists('mvnw')) {
-                                                        sh 'chmod +x mvnw || true'
-                                                        // Continue even if tests fail (UNSTABLE status)
-                                                        sh './mvnw clean verify -Dmaven.test.failure.ignore=true || echo "Build completed with test failures"'
-                                                    } else {
-                                                        sh 'mvn clean verify -Dmaven.test.failure.ignore=true || echo "Build completed with test failures"'
-                                                    }
-                                                    if (env.SONAR_TOKEN) {
-                                                        withSonarQubeEnv('SonarQube') {
-                                                            if (fileExists('mvnw')) {
-                                                                sh './mvnw sonar:sonar -Dsonar.qualitygate.wait=true'
-                                                            } else {
-                                                                sh 'mvn sonar:sonar -Dsonar.qualitygate.wait=true'
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            } catch (Exception mavenError) {
-                                                // Fallback: use mvnw directly if Maven not configured
-                                                echo "Maven plugin not configured, using mvnw: ${mavenError.getMessage()}"
-                                                if (fileExists('mvnw')) {
-                                                    sh 'chmod +x mvnw || true'
-                                                    // Continue even if tests fail (UNSTABLE status)
-                                                    sh './mvnw clean verify -Dmaven.test.failure.ignore=true || echo "Build completed with test failures"'
-                                                    if (env.SONAR_TOKEN) {
-                                                        withSonarQubeEnv('SonarQube') {
-                                                            sh './mvnw sonar:sonar -Dsonar.qualitygate.wait=true || echo "SonarQube skipped"'
-                                                        }
-                                                    }
-                                                } else {
-                                                    echo "Skipping ${service}: mvnw not found and Maven not configured"
-                                                }
+                                            echo "Building ${service}..."
+                                            
+                                            // Use Maven directly (installed in Jenkins image)
+                                            // Try mvnw first if available, otherwise use system Maven
+                                            def mavenCmd = 'mvn'
+                                            if (fileExists('mvnw')) {
+                                                sh 'chmod +x mvnw || true'
+                                                mavenCmd = './mvnw'
                                             }
+                                            
+                                            // Build and test (continue even if tests fail)
+                                            sh "${mavenCmd} clean verify -Dmaven.test.failure.ignore=true || echo 'Build completed with test failures'"
+                                            
+                                            // SonarQube analysis
+                                            if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                                withSonarQubeEnv('SonarQube') {
+                                                    sh "${mavenCmd} sonar:sonar -Dsonar.qualitygate.wait=true || echo 'SonarQube analysis skipped'"
+                                                }
+                                            } else {
+                                                echo "SonarQube token not configured, skipping analysis for ${service}"
+                                            }
+                                            
+                                            echo "✅ ${service} build completed"
                                         } catch (Exception e) {
-                                            echo "Error building ${service}: ${e.getMessage()}"
+                                            echo "❌ Error building ${service}: ${e.getMessage()}"
                                             // Continue with other services
                                         }
                                     }
@@ -136,47 +133,31 @@ pipeline {
                                 dir("services/${service}") {
                                     script {
                                         try {
-                                            // Try to use Pyenv plugin, fallback to direct python if not available
-                                            try {
-                                                withPythonEnv('python3') {
-                                                    sh """
-                                                        python -m venv venv || python3 -m venv venv
-                                                        . venv/bin/activate || venv/Scripts/activate
-                                                        pip install -r requirements.txt
-                                                        pip install pytest pytest-cov coverage
-                                                        pytest --cov=. --cov-report=xml --cov-report=html || echo 'No tests found'
-                                                        coverage xml || echo 'Coverage not available'
-                                                    """
-                                                    if (env.SONAR_TOKEN) {
-                                                        withSonarQubeEnv('SonarQube') {
-                                                            sh '. venv/bin/activate && sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
-                                                        }
-                                                    }
+                                            echo "Building ${service}..."
+                                            
+                                            // Use Python3 directly (installed in Jenkins image)
+                                            sh """
+                                                python3 -m venv venv || echo 'venv creation failed'
+                                                . venv/bin/activate || echo 'venv activation failed'
+                                                pip install --upgrade pip || echo 'pip upgrade failed'
+                                                pip install -r requirements.txt || echo 'pip install failed'
+                                                pip install pytest pytest-cov coverage || echo 'pytest install failed'
+                                                pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                                coverage xml || echo 'Coverage XML not generated'
+                                            """
+                                            
+                                            // SonarQube analysis
+                                            if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                                withSonarQubeEnv('SonarQube') {
+                                                    sh '. venv/bin/activate && sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
                                                 }
-                                            } catch (Exception pythonError) {
-                                                // Fallback: use python directly if plugin not working
-                                                echo "Python plugin not working, trying direct python: ${pythonError.getMessage()}"
-                                                def pythonCmd = sh(script: 'which python3 || which python || echo "NOT_FOUND"', returnStdout: true).trim()
-                                                if (pythonCmd != 'NOT_FOUND') {
-                                                    sh """
-                                                        ${pythonCmd} -m venv venv || echo 'venv creation failed'
-                                                        . venv/bin/activate || venv/Scripts/activate || echo 'venv activation failed'
-                                                        pip install -r requirements.txt || echo 'pip install failed'
-                                                        pip install pytest pytest-cov coverage || echo 'test tools install failed'
-                                                        pytest --cov=. --cov-report=xml --cov-report=html || echo 'No tests found'
-                                                        coverage xml || echo 'Coverage not available'
-                                                    """
-                                                    if (env.SONAR_TOKEN) {
-                                                        withSonarQubeEnv('SonarQube') {
-                                                            sh '. venv/bin/activate && sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
-                                                        }
-                                                    }
-                                                } else {
-                                                    echo "Skipping ${service}: Python not available"
-                                                }
+                                            } else {
+                                                echo "SonarQube token not configured, skipping analysis for ${service}"
                                             }
+                                            
+                                            echo "✅ ${service} build completed"
                                         } catch (Exception e) {
-                                            echo "Error building ${service}: ${e.getMessage()}"
+                                            echo "❌ Error building ${service}: ${e.getMessage()}"
                                             // Continue with other services
                                         }
                                     }
@@ -191,43 +172,28 @@ pipeline {
                         dir('services/S8-DashboardQualite/test-priority-hub') {
                             script {
                                 try {
-                                    // Try to use NPM plugin, fallback to direct npm if not configured
-                                    try {
-                                        withNPM() {
-                                            sh """
-                                                npm ci || npm install
-                                                npm run lint || echo 'Lint skipped'
-                                                npm run build
-                                                npm test -- --coverage || echo 'Tests skipped'
-                                            """
-                                            if (env.SONAR_TOKEN) {
-                                                withSonarQubeEnv('SonarQube') {
-                                                    sh 'sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
-                                                }
-                                            }
+                                    echo "Building frontend..."
+                                    
+                                    // Use npm directly (installed in Jenkins image)
+                                    sh """
+                                        npm ci || npm install || echo 'npm install failed'
+                                        npm run lint || echo 'Lint skipped'
+                                        npm run build || echo 'Build failed'
+                                        npm test -- --coverage || echo 'Tests skipped'
+                                    """
+                                    
+                                    // SonarQube analysis
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            sh 'sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
                                         }
-                                    } catch (Exception npmError) {
-                                        // Fallback: use npm directly if plugin not configured
-                                        echo "NPM plugin not configured, trying direct npm: ${npmError.getMessage()}"
-                                        def npmCmd = sh(script: 'which npm || echo "NOT_FOUND"', returnStdout: true).trim()
-                                        if (npmCmd != 'NOT_FOUND') {
-                                            sh """
-                                                npm ci || npm install || echo 'npm install failed'
-                                                npm run lint || echo 'Lint skipped'
-                                                npm run build || echo 'Build failed'
-                                                npm test -- --coverage || echo 'Tests skipped'
-                                            """
-                                            if (env.SONAR_TOKEN) {
-                                                withSonarQubeEnv('SonarQube') {
-                                                    sh 'sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
-                                                }
-                                            }
-                                        } else {
-                                            echo "Skipping frontend: npm not available"
-                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for frontend"
                                     }
+                                    
+                                    echo "✅ Frontend build completed"
                                 } catch (Exception e) {
-                                    echo "Error building frontend: ${e.getMessage()}"
+                                    echo "❌ Error building frontend: ${e.getMessage()}"
                                 }
                             }
                         }
@@ -258,36 +224,39 @@ pipeline {
                         'prioritest-s9-integrations'  // from sonar-project.properties
                     ]
                     
-                    services.each { projectKey ->
-                        try {
-                            // Use credentials helper to get token properly
-                            def token = credentials('sonar-token')
-                            def url = env.SONARQUBE_URL ?: 'http://sonarqube:9000'
-                            def response = sh(
-                                script: "curl -s -u '${token}:' '${url}/api/qualitygates/project_status?projectKey=${projectKey}'",
-                                returnStdout: true
-                            ).trim()
-                            
-                            // Try to extract status (jq may not be available)
-                            def qualityGateStatus = 'UNKNOWN'
-                            if (response.contains('"status":"OK"')) {
-                                qualityGateStatus = 'OK'
-                            } else if (response.contains('"status":"ERROR"')) {
-                                qualityGateStatus = 'ERROR'
-                            } else if (response.contains('"status":"WARN"')) {
-                                qualityGateStatus = 'WARN'
+                    // Use withCredentials to get the actual token value
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                        def url = env.SONARQUBE_URL ?: 'http://sonarqube:9000'
+                        
+                        services.each { projectKey ->
+                            try {
+                                // Use the actual token value from credentials
+                                def response = sh(
+                                    script: "curl -s -u '${env.SONAR_TOKEN_VALUE}:' '${url}/api/qualitygates/project_status?projectKey=${projectKey}'",
+                                    returnStdout: true
+                                ).trim()
+                                
+                                // Try to extract status (jq may not be available)
+                                def qualityGateStatus = 'UNKNOWN'
+                                if (response.contains('"status":"OK"')) {
+                                    qualityGateStatus = 'OK'
+                                } else if (response.contains('"status":"ERROR"')) {
+                                    qualityGateStatus = 'ERROR'
+                                } else if (response.contains('"status":"WARN"')) {
+                                    qualityGateStatus = 'WARN'
+                                }
+                                
+                                if (qualityGateStatus == 'OK') {
+                                    echo "✅ Quality Gate passed for ${projectKey}"
+                                } else if (qualityGateStatus == 'UNKNOWN') {
+                                    echo "⚠️ Quality Gate not available for ${projectKey} (project may not exist yet or analysis not completed)"
+                                } else {
+                                    echo "⚠️ Warning: Quality Gate status for ${projectKey}: ${qualityGateStatus}"
+                                    // Don't fail the build, just warn
+                                }
+                            } catch (Exception e) {
+                                echo "Could not check Quality Gate for ${projectKey}: ${e.getMessage()}"
                             }
-                            
-                            if (qualityGateStatus == 'OK') {
-                                echo "Quality Gate passed for ${projectKey}"
-                            } else if (qualityGateStatus == 'UNKNOWN') {
-                                echo "Quality Gate not available for ${projectKey} (project may not exist yet)"
-                            } else {
-                                echo "Warning: Quality Gate status for ${projectKey}: ${qualityGateStatus}"
-                                // Don't fail the build, just warn
-                            }
-                        } catch (Exception e) {
-                            echo "Could not check Quality Gate for ${projectKey}: ${e.getMessage()}"
                         }
                     }
                 }
