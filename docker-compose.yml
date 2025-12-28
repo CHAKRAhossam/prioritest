@@ -2,6 +2,62 @@ version: '3.8'
 
 services:
   # ============================================
+  # CI/CD INFRASTRUCTURE
+  # ============================================
+
+  # SonarQube for Code Quality
+  sonarqube:
+    image: sonarqube:community
+    container_name: prioritest-sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+      - SONAR_JDBC_URL=jdbc:postgresql://postgres-sonar:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    depends_on:
+      postgres-sonar:
+        condition: service_healthy
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Jenkins for CI/CD
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: prioritest-jenkins
+    user: root
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    environment:
+      - JENKINS_OPTS=--httpPort=8080
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker
+    depends_on:
+      - sonarqube
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ============================================
   # INFRASTRUCTURE SERVICES
   # ============================================
 
@@ -33,7 +89,7 @@ services:
       dockerfile: Dockerfile
     container_name: prioritest-api-gateway
     ports:
-      - "8080:8080"
+      - "8090:8080"
     environment:
       SERVER_PORT: 8080
       EUREKA_URI: http://discovery-server:8761/eureka/
@@ -64,7 +120,7 @@ services:
   # DATA SERVICES
   # ============================================
 
-  # Base de données
+  # Base de données (TimescaleDB pour PRIORITEST)
   postgres:
     image: timescale/timescaledb:latest-pg15
     container_name: prioritest-postgres
@@ -84,6 +140,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # Base de données pour SonarQube
+  postgres-sonar:
+    image: postgres:15-alpine
+    container_name: prioritest-postgres-sonar
+    environment:
+      POSTGRES_DB: sonar
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_sonar_data:/var/lib/postgresql/data
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # MinIO pour stockage objets
   minio:
     image: minio/minio:latest
@@ -93,8 +169,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9100:9000"
+      - "9101:9001"
     volumes:
       - minio_data:/data
     networks:
@@ -472,7 +548,7 @@ services:
       args:
         # API Gateway URL - use localhost since browser makes requests from user's machine
         # Note: Don't include /api in base URL as client.ts already adds it
-        VITE_API_URL: http://localhost:8080
+        VITE_API_URL: http://localhost:8090
     container_name: prioritest-s8-dashboard-qualite
     ports:
       - "3000:8080"
@@ -490,6 +566,7 @@ services:
 
 volumes:
   postgres_data:
+  postgres_sonar_data:
   minio_data:
   analyse_statique_temp:
   collecte_depots_temp:
@@ -498,6 +575,10 @@ volumes:
   pretraitement_features_data:
   pretraitement_features_feature_repo:
   ml_service_models:
+  jenkins_data:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
 
 networks:
   prioritest-network:

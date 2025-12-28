@@ -1,0 +1,206 @@
+version: '3.8'
+
+services:
+  api-gateway:
+    image: ${DOCKER_REGISTRY}/s0-apigateway:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+      - EUREKA_URI=http://discovery-server:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  collecte-depots:
+    image: ${DOCKER_REGISTRY}/s1-collectedepots:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=production
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  analyse-statique:
+    image: ${DOCKER_REGISTRY}/s2-analysestatique:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  historique-tests:
+    image: ${DOCKER_REGISTRY}/s3-historiquetests:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8082:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  pretraitement-features:
+    image: ${DOCKER_REGISTRY}/s4-pretraitementfeatures:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8004:8000"
+    environment:
+      - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  ml-service:
+    image: ${DOCKER_REGISTRY}/s5-mlservice:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8005:8001"
+    environment:
+      - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  moteur-priorisation:
+    image: ${DOCKER_REGISTRY}/s6-moteurpriorisation:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    environment:
+      - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  test-scaffolder:
+    image: ${DOCKER_REGISTRY}/s7-testscaffolder:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8007:8007"
+    environment:
+      - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  s8-dashboard-qualite:
+    image: ${DOCKER_REGISTRY}/s8-dashboardqualite:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  integrations:
+    image: ${DOCKER_REGISTRY}/s9-integrations:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8009:8009"
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8009/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
