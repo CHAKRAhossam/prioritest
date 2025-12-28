@@ -53,10 +53,9 @@ RUN wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-s
 # Set environment variables (available for all users)
 ENV MAVEN_HOME=/opt/maven
 ENV SONAR_SCANNER_HOME=/opt/sonar-scanner
-ENV PATH="${MAVEN_HOME}/bin:${SONAR_SCANNER_HOME}/bin:${PATH}"
 ENV CARGO_HOME=/root/.cargo
 ENV RUSTUP_HOME=/root/.rustup
-ENV PATH="${CARGO_HOME}/bin:${PATH}"
+ENV PATH="${CARGO_HOME}/bin:${MAVEN_HOME}/bin:${SONAR_SCANNER_HOME}/bin:${PATH}"
 
 # Keep root user (Jenkins runs as root in docker-compose.yml)
 # This allows access to Docker socket and all tools

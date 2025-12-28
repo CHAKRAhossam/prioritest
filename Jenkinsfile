@@ -159,7 +159,7 @@ pipeline {
                                                     sh '''
                                                         export PATH=/opt/sonar-scanner/bin:$PATH
                                                         . venv/bin/activate
-                                                        sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                        /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
                                                     '''
                                                 }
                                             } else {
@@ -198,7 +198,7 @@ pipeline {
                                         withSonarQubeEnv('SonarQube') {
                                             sh '''
                                                 export PATH=/opt/sonar-scanner/bin:$PATH
-                                                sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
                                             '''
                                         }
                                     } else {
