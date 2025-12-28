@@ -141,7 +141,9 @@ pipeline {
                                                 export CARGO_HOME=/root/.cargo
                                                 export RUSTUP_HOME=/root/.rustup
                                                 export PATH=\$CARGO_HOME/bin:\$PATH
-                                                . /root/.cargo/env || echo 'Rust env load failed'
+                                                if [ -f /root/.cargo/env ]; then
+                                                    . /root/.cargo/env
+                                                fi
                                                 python3 -m venv venv || echo 'venv creation failed'
                                                 . venv/bin/activate || echo 'venv activation failed'
                                                 pip install --upgrade pip || echo 'pip upgrade failed'
@@ -194,7 +196,10 @@ pipeline {
                                     // SonarQube analysis
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
-                                            sh 'sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
+                                            sh '''
+                                                export PATH=/opt/sonar-scanner/bin:$PATH
+                                                sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                            '''
                                         }
                                     } else {
                                         echo "SonarQube token not configured, skipping analysis for frontend"
@@ -224,13 +229,13 @@ pipeline {
                         'com.prioritest:api-gateway',  // Maven key (from S0 pom.xml: com.prioritest:api-gateway)
                         'prioritest-s1-collectedepots',
                         'com.reco:S2-AnalyseStatique',  // Maven key (from S2 pom.xml: com.reco:S2-AnalyseStatique)
-                        'prioritest-s3-historiquetests',  // from sonar-project.properties
+                        'com.example:historique-tests',  // Maven key (from S3 pom.xml: com.example:historique-tests)
                         'prioritest-s4-pretraitementfeatures',
                         'prioritest-s5-mlservice',
                         'prioritest-s6-moteurpriorisation',
                         'prioritest-s7-testscaffolder',
                         'prioritest-s8-dashboard',
-                        'prioritest-s9-integrations'  // from sonar-project.properties
+                        'com.testprioritization:cicd-integration-service'  // Maven key (from S9 pom.xml: com.testprioritization:cicd-integration-service)
                     ]
                     
                     // Use withCredentials to get the actual token value
@@ -239,9 +244,9 @@ pipeline {
                         
                         services.each { projectKey ->
                             try {
-                                // Use the actual token value from credentials
+                                // Use the actual token value from credentials (without env. prefix)
                                 def response = sh(
-                                    script: "curl -s -u '${env.SONAR_TOKEN_VALUE}:' '${url}/api/qualitygates/project_status?projectKey=${projectKey}'",
+                                    script: "curl -s -u '${SONAR_TOKEN_VALUE}:' '${url}/api/qualitygates/project_status?projectKey=${projectKey}'",
                                     returnStdout: true
                                 ).trim()
                                 
