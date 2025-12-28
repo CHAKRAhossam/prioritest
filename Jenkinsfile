@@ -75,13 +75,25 @@ pipeline {
                                 dir("services/${service}") {
                                     script {
                                         try {
-                                            sh './mvnw clean verify'
-                                            if (env.SONAR_TOKEN) {
-                                                withSonarQubeEnv('SonarQube') {
-                                                    sh './mvnw sonar:sonar -Dsonar.qualitygate.wait=true'
+                                            // Use Pipeline Maven Integration plugin
+                                            withMaven(maven: 'Maven') {
+                                                if (fileExists('mvnw')) {
+                                                    sh 'chmod +x mvnw || true'
+                                                    sh './mvnw clean verify'
+                                                } else {
+                                                    sh 'mvn clean verify'
                                                 }
-                                            } else {
-                                                echo "Skipping SonarQube analysis for ${service} (token not configured)"
+                                                if (env.SONAR_TOKEN) {
+                                                    withSonarQubeEnv('SonarQube') {
+                                                        if (fileExists('mvnw')) {
+                                                            sh './mvnw sonar:sonar -Dsonar.qualitygate.wait=true'
+                                                        } else {
+                                                            sh 'mvn sonar:sonar -Dsonar.qualitygate.wait=true'
+                                                        }
+                                                    }
+                                                } else {
+                                                    echo "Skipping SonarQube analysis for ${service} (token not configured)"
+                                                }
                                             }
                                         } catch (Exception e) {
                                             echo "Error building ${service}: ${e.getMessage()}"
@@ -108,20 +120,23 @@ pipeline {
                                 dir("services/${service}") {
                                     script {
                                         try {
-                                            sh """
-                                                python -m venv venv || python3 -m venv venv
-                                                source venv/bin/activate || venv\\Scripts\\activate || . venv/bin/activate
-                                                pip install -r requirements.txt || pip3 install -r requirements.txt
-                                                pip install pytest pytest-cov coverage || pip3 install pytest pytest-cov coverage
-                                                pytest --cov=. --cov-report=xml --cov-report=html || echo 'No tests found'
-                                                coverage xml || echo 'Coverage not available'
-                                            """
-                                            if (env.SONAR_TOKEN) {
-                                                withSonarQubeEnv('SonarQube') {
-                                                    sh 'source venv/bin/activate && sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
+                                            // Use Pyenv Pipeline plugin
+                                            withPythonEnv('python3') {
+                                                sh """
+                                                    python -m venv venv || python3 -m venv venv
+                                                    . venv/bin/activate || venv/Scripts/activate
+                                                    pip install -r requirements.txt
+                                                    pip install pytest pytest-cov coverage
+                                                    pytest --cov=. --cov-report=xml --cov-report=html || echo 'No tests found'
+                                                    coverage xml || echo 'Coverage not available'
+                                                """
+                                                if (env.SONAR_TOKEN) {
+                                                    withSonarQubeEnv('SonarQube') {
+                                                        sh '. venv/bin/activate && sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
+                                                    }
+                                                } else {
+                                                    echo "Skipping SonarQube analysis for ${service} (token not configured)"
                                                 }
-                                            } else {
-                                                echo "Skipping SonarQube analysis for ${service} (token not configured)"
                                             }
                                         } catch (Exception e) {
                                             echo "Error building ${service}: ${e.getMessage()}"
@@ -139,18 +154,21 @@ pipeline {
                         dir('services/S8-DashboardQualite/test-priority-hub') {
                             script {
                                 try {
-                                    sh """
-                                        npm ci || npm install
-                                        npm run lint || echo 'Lint skipped'
-                                        npm run build
-                                        npm test -- --coverage || echo 'Tests skipped'
-                                    """
-                                    if (env.SONAR_TOKEN) {
-                                        withSonarQubeEnv('SonarQube') {
-                                            sh 'sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
+                                    // Use Pipeline NPM Integration plugin
+                                    withNPM(npmrcConfig: '') {
+                                        sh """
+                                            npm ci || npm install
+                                            npm run lint || echo 'Lint skipped'
+                                            npm run build
+                                            npm test -- --coverage || echo 'Tests skipped'
+                                        """
+                                        if (env.SONAR_TOKEN) {
+                                            withSonarQubeEnv('SonarQube') {
+                                                sh 'sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
+                                            }
+                                        } else {
+                                            echo "Skipping SonarQube analysis for frontend (token not configured)"
                                         }
-                                    } else {
-                                        echo "Skipping SonarQube analysis for frontend (token not configured)"
                                     }
                                 } catch (Exception e) {
                                     echo "Error building frontend: ${e.getMessage()}"
@@ -271,6 +289,7 @@ pipeline {
                     echo "No JUnit reports found: ${e.getMessage()}"
                 }
                 try {
+                    // Use HTML Publisher plugin (now installed)
                     publishHTML([
                         reportDir: 'coverage',
                         reportFiles: 'index.html',
