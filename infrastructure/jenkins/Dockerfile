@@ -16,12 +16,15 @@ RUN curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.6/binaries/apac
     chmod -R 755 /opt/maven
 
 # Install Python 3 and pip with build dependencies
+# Also install PostgreSQL dev packages for psycopg2-binary
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
     build-essential \
     python3-dev \
+    libpq-dev \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20.x LTS
