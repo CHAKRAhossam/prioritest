@@ -34,10 +34,14 @@ RUN apt-get update && apt-get install -y jq && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Rust (required for pydantic-core compilation)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    . $HOME/.cargo/env && \
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN . $HOME/.cargo/env && \
     rustc --version && \
     cargo --version
+RUN echo 'source $HOME/.cargo/env' >> /root/.bashrc && \
+    echo 'export CARGO_HOME=$HOME/.cargo' >> /root/.bashrc && \
+    echo 'export RUSTUP_HOME=$HOME/.rustup' >> /root/.bashrc && \
+    echo 'export PATH=$CARGO_HOME/bin:$PATH' >> /root/.bashrc
 
 # Install SonarQube Scanner
 RUN wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip -O /tmp/sonar-scanner.zip && \
@@ -60,7 +64,10 @@ ENV PATH="${CARGO_HOME}/bin:${PATH}"
 # Verify installations (find and use Java from Jenkins base image)
 RUN JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java)))) && \
     export JAVA_HOME && \
-    . $HOME/.cargo/env && \
+    export CARGO_HOME=/root/.cargo && \
+    export RUSTUP_HOME=/root/.rustup && \
+    export PATH=$CARGO_HOME/bin:$PATH && \
+    if [ -f /root/.cargo/env ]; then . /root/.cargo/env; fi && \
     mvn --version && \
     python3 --version && \
     pip3 --version && \
