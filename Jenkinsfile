@@ -41,6 +41,26 @@ pipeline {
                         Message: ${gitMessage}
                         ========================================
                     """
+                    
+                    // Clear corrupted Maven repository to fix "Non-readable POM" errors
+                    echo "Cleaning Maven repository to fix corrupted POM files..."
+                    sh 'rm -rf /root/.m2/repository/org/sonatype/oss/oss-parent/7 || true'
+                    sh 'rm -rf /root/.m2/repository/io/prometheus/simpleclient_bom || true'
+                    sh 'rm -rf /root/.m2/repository/com/fasterxml/jackson/jackson-bom || true'
+                    sh 'rm -rf /root/.m2/repository/org/junit/junit-bom || true'
+                    sh 'rm -rf /root/.m2/repository/org/apache/apache || true'
+                    sh 'rm -rf /root/.m2/repository/io/netty/netty-bom || true'
+                    sh 'rm -rf /root/.m2/repository/com/squareup/okhttp3/okhttp-bom || true'
+                    sh 'rm -rf /root/.m2/repository/io/opentelemetry/opentelemetry-bom || true'
+                    sh 'rm -rf /root/.m2/repository/com/oracle/database/jdbc/ojdbc-bom || true'
+                    sh 'rm -rf /root/.m2/repository/com/querydsl/querydsl-bom || true'
+                    sh 'rm -rf /root/.m2/repository/io/rest-assured/rest-assured-bom || true'
+                    sh 'rm -rf /root/.m2/repository/io/rsocket/rsocket-bom || true'
+                    sh 'rm -rf /root/.m2/repository/org/seleniumhq/selenium/selenium-bom || true'
+                    sh 'rm -rf /root/.m2/repository/org/springframework || true'
+                    sh 'rm -rf /root/.m2/repository/org/testcontainers/testcontainers-bom || true'
+                    sh 'rm -rf /root/.m2/repository/org/mockito/mockito-bom || true'
+                    echo "Maven repository cleaned"
                 }
             }
         }
@@ -156,11 +176,15 @@ pipeline {
                                             // SonarQube analysis
                                             if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                                 withSonarQubeEnv('SonarQube') {
-                                                    sh '''
-                                                        export PATH=/opt/sonar-scanner/bin:$PATH
-                                                        . venv/bin/activate
-                                                        /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
-                                                    '''
+                                                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                        sh """
+                                                            export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                            export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                            export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                            . venv/bin/activate
+                                                            /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                        """
+                                                    }
                                                 }
                                             } else {
                                                 echo "SonarQube token not configured, skipping analysis for ${service}"
@@ -196,10 +220,14 @@ pipeline {
                                     // SonarQube analysis
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
-                                            sh '''
-                                                export PATH=/opt/sonar-scanner/bin:$PATH
-                                                /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
-                                            '''
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                """
+                                            }
                                         }
                                     } else {
                                         echo "SonarQube token not configured, skipping analysis for frontend"

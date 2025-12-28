@@ -59,3 +59,4 @@ class ClassSuggestions(BaseModel):
 
 
 
+
