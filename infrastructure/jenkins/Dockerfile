@@ -15,11 +15,13 @@ RUN curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.6/binaries/apac
     ln -s /opt/apache-maven-3.9.6 /opt/maven && \
     chmod -R 755 /opt/maven
 
-# Install Python 3 and pip
+# Install Python 3 and pip with build dependencies
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
+    build-essential \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20.x LTS
@@ -31,20 +33,43 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
 RUN apt-get update && apt-get install -y jq && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Rust (required for pydantic-core compilation)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . $HOME/.cargo/env && \
+    rustc --version && \
+    cargo --version
+
+# Install SonarQube Scanner
+RUN wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip -O /tmp/sonar-scanner.zip && \
+    unzip /tmp/sonar-scanner.zip -d /opt && \
+    mv /opt/sonar-scanner-* /opt/sonar-scanner && \
+    rm /tmp/sonar-scanner.zip && \
+    chmod -R 755 /opt/sonar-scanner
+
 # Set environment variables (available for all users)
 ENV MAVEN_HOME=/opt/maven
-ENV PATH="${MAVEN_HOME}/bin:${PATH}"
-ENV JAVA_HOME=/usr/local/openjdk-17
+ENV SONAR_SCANNER_HOME=/opt/sonar-scanner
+ENV PATH="${MAVEN_HOME}/bin:${SONAR_SCANNER_HOME}/bin:${PATH}"
+ENV CARGO_HOME=/root/.cargo
+ENV RUSTUP_HOME=/root/.rustup
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Keep root user (Jenkins runs as root in docker-compose.yml)
 # This allows access to Docker socket and all tools
 
-# Verify installations
-RUN mvn --version && \
+# Verify installations (find and use Java from Jenkins base image)
+RUN JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java)))) && \
+    export JAVA_HOME && \
+    . $HOME/.cargo/env && \
+    mvn --version && \
     python3 --version && \
     pip3 --version && \
     node --version && \
     npm --version && \
     jq --version && \
-    echo "All tools installed successfully!"
+    rustc --version && \
+    cargo --version && \
+    sonar-scanner --version && \
+    echo "All tools installed successfully!" && \
+    echo "JAVA_HOME=${JAVA_HOME}"
 

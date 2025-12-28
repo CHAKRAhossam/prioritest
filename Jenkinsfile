@@ -136,7 +136,12 @@ pipeline {
                                             echo "Building ${service}..."
                                             
                                             // Use Python3 directly (installed in Jenkins image)
+                                            // Load Rust environment for pydantic-core compilation
                                             sh """
+                                                export CARGO_HOME=/root/.cargo
+                                                export RUSTUP_HOME=/root/.rustup
+                                                export PATH=\$CARGO_HOME/bin:\$PATH
+                                                . /root/.cargo/env || echo 'Rust env load failed'
                                                 python3 -m venv venv || echo 'venv creation failed'
                                                 . venv/bin/activate || echo 'venv activation failed'
                                                 pip install --upgrade pip || echo 'pip upgrade failed'
@@ -149,7 +154,11 @@ pipeline {
                                             // SonarQube analysis
                                             if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                                 withSonarQubeEnv('SonarQube') {
-                                                    sh '. venv/bin/activate && sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"'
+                                                    sh '''
+                                                        export PATH=/opt/sonar-scanner/bin:$PATH
+                                                        . venv/bin/activate
+                                                        sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                    '''
                                                 }
                                             } else {
                                                 echo "SonarQube token not configured, skipping analysis for ${service}"
