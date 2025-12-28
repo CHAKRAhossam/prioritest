@@ -244,10 +244,11 @@ pipeline {
                 script {
                     // Use actual SonarQube project keys (from sonar-project.properties or Maven format: groupId:artifactId)
                     // Note: Some projects use sonar-project.properties keys, others use Maven keys
+                    // Based on actual SonarQube analysis logs:
                     def services = [
-                        'prioritest-s0-apigateway',  // from sonar-project.properties
+                        'com.prioritest:api-gateway',  // Maven key (from S0 pom.xml: com.prioritest:api-gateway)
                         'prioritest-s1-collectedepots',
-                        'com.reco:S2-AnalyseStatique',  // Maven key (groupId:artifactId)
+                        'com.reco:S2-AnalyseStatique',  // Maven key (from S2 pom.xml: com.reco:S2-AnalyseStatique)
                         'prioritest-s3-historiquetests',  // from sonar-project.properties
                         'prioritest-s4-pretraitementfeatures',
                         'prioritest-s5-mlservice',
@@ -259,8 +260,9 @@ pipeline {
                     
                     services.each { projectKey ->
                         try {
-                            def token = env.SONAR_TOKEN
-                            def url = SONARQUBE_URL
+                            // Use credentials helper to get token properly
+                            def token = credentials('sonar-token')
+                            def url = env.SONARQUBE_URL ?: 'http://sonarqube:9000'
                             def response = sh(
                                 script: "curl -s -u '${token}:' '${url}/api/qualitygates/project_status?projectKey=${projectKey}'",
                                 returnStdout: true
