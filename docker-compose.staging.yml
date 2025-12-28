@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+  api-gateway:
+    image: ${DOCKER_REGISTRY}/s0-apigateway:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=staging
+      - EUREKA_URI=http://discovery-server:8761/eureka/
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  collecte-depots:
+    image: ${DOCKER_REGISTRY}/s1-collectedepots:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=staging
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  analyse-statique:
+    image: ${DOCKER_REGISTRY}/s2-analysestatique:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=staging
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  historique-tests:
+    image: ${DOCKER_REGISTRY}/s3-historiquetests:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8082:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=staging
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  pretraitement-features:
+    image: ${DOCKER_REGISTRY}/s4-pretraitementfeatures:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8004:8000"
+    environment:
+      - ENVIRONMENT=staging
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  ml-service:
+    image: ${DOCKER_REGISTRY}/s5-mlservice:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8005:8001"
+    environment:
+      - ENVIRONMENT=staging
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  moteur-priorisation:
+    image: ${DOCKER_REGISTRY}/s6-moteurpriorisation:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    environment:
+      - ENVIRONMENT=staging
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  test-scaffolder:
+    image: ${DOCKER_REGISTRY}/s7-testscaffolder:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8007:8007"
+    environment:
+      - ENVIRONMENT=staging
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  s8-dashboard-qualite:
+    image: ${DOCKER_REGISTRY}/s8-dashboardqualite:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  integrations:
+    image: ${DOCKER_REGISTRY}/s9-integrations:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8009:8009"
+    environment:
+      - SPRING_PROFILES_ACTIVE=staging
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+

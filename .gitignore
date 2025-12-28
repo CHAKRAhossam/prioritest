@@ -1,8 +1,17 @@
-.venv/
-__pycache__/
-*.pyc
-.DS_Store
+# Jenkins
+.jenkins/
+workspace/
 
+# SonarQube
+.sonar/
+.scannerwork/
+
+# Coverage reports
+coverage/
+htmlcov/
+*.coverage
+.coverage
+*.lcov
 
 # Python
 __pycache__/
@@ -10,86 +19,56 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
 venv/
 env/
 ENV/
 .venv
 
+# Java
+target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/
+mvnw
+mvnw.cmd
+
+# Node
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # IDE
-.vscode/
 .idea/
+.vscode/
+*.iml
 *.swp
 *.swo
 *~
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environment variables
-.env
-.env.local
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
+# Docker
+.dockerignore
 
-# Jira scripts (contiennent des tokens)
-import_user_stories.py
-organize_sprints.py
+# Environment
+.env
+.env.local
+.env.*.local
 
-# Data
-data/
-*.csv
-*.json
-*.parquet
-
-# Models
-models/
-*.pkl
-*.joblib
-*.h5
-
-# DVC
-.dvc/
-.dvcignore
-
-# MLflow
-mlruns/
-
-# Node (pour le dashboard)
-node_modules/
-npm-debug.log
-yarn-error.log
-
-# Build
-dist/
-build/
-
-# Coverage
-.coverage
-htmlcov/
-.pytest_cache/
+# Test results
+test-results/
+*.xml
+*.html
 
 # Temporary files
 *.tmp
 *.temp
+*.bak
