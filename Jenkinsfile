@@ -264,73 +264,67 @@ pipeline {
     
     post {
         always {
-            node {
-                script {
-                    try {
-                        junit '**/target/surefire-reports/*.xml'
-                    } catch (Exception e) {
-                        echo "No JUnit reports found: ${e.getMessage()}"
-                    }
-                    try {
-                        publishHTML([
-                            reportDir: 'coverage',
-                            reportFiles: 'index.html',
-                            reportName: 'Coverage Report',
-                            allowMissing: true
-                        ])
-                    } catch (Exception e) {
-                        echo "No coverage reports found: ${e.getMessage()}"
-                    }
-                    try {
-                        archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true
-                    } catch (Exception e) {
-                        echo "No artifacts to archive: ${e.getMessage()}"
-                    }
+            script {
+                try {
+                    junit '**/target/surefire-reports/*.xml'
+                } catch (Exception e) {
+                    echo "No JUnit reports found: ${e.getMessage()}"
+                }
+                try {
+                    publishHTML([
+                        reportDir: 'coverage',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report',
+                        allowMissing: true
+                    ])
+                } catch (Exception e) {
+                    echo "No coverage reports found: ${e.getMessage()}"
+                }
+                try {
+                    archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true
+                } catch (Exception e) {
+                    echo "No artifacts to archive: ${e.getMessage()}"
                 }
             }
         }
         success {
-            node {
-                script {
-                    try {
-                        def gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-                        def gitAuthor = sh(returnStdout: true, script: 'git log -1 --pretty=format:"%an"').trim()
-                        
-                        echo """
-                            ========================================
-                            Build Successful!
-                            Branch: ${env.BRANCH_NAME}
-                            Commit: ${gitCommit}
-                            Author: ${gitAuthor}
-                            Build: ${BUILD_URL}
-                            ========================================
-                        """
-                    } catch (Exception e) {
-                        echo "Could not get build info: ${e.getMessage()}"
-                    }
+            script {
+                try {
+                    def gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+                    def gitAuthor = sh(returnStdout: true, script: 'git log -1 --pretty=format:"%an"').trim()
+                    
+                    echo """
+                        ========================================
+                        Build Successful!
+                        Branch: ${env.BRANCH_NAME}
+                        Commit: ${gitCommit}
+                        Author: ${gitAuthor}
+                        Build: ${BUILD_URL}
+                        ========================================
+                    """
+                } catch (Exception e) {
+                    echo "Could not get build info: ${e.getMessage()}"
                 }
             }
         }
         failure {
-            node {
-                script {
-                    try {
-                        def gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-                        def gitAuthor = sh(returnStdout: true, script: 'git log -1 --pretty=format:"%an"').trim()
-                        
-                        echo """
-                            ========================================
-                            Build Failed!
-                            Branch: ${env.BRANCH_NAME}
-                            Commit: ${gitCommit}
-                            Author: ${gitAuthor}
-                            Build: ${BUILD_URL}
-                            Console: ${BUILD_URL}console
-                            ========================================
-                        """
-                    } catch (Exception e) {
-                        echo "Could not get build info: ${e.getMessage()}"
-                    }
+            script {
+                try {
+                    def gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+                    def gitAuthor = sh(returnStdout: true, script: 'git log -1 --pretty=format:"%an"').trim()
+                    
+                    echo """
+                        ========================================
+                        Build Failed!
+                        Branch: ${env.BRANCH_NAME}
+                        Commit: ${gitCommit}
+                        Author: ${gitAuthor}
+                        Build: ${BUILD_URL}
+                        Console: ${BUILD_URL}console
+                        ========================================
+                    """
+                } catch (Exception e) {
+                    echo "Could not get build info: ${e.getMessage()}"
                 }
             }
         }
