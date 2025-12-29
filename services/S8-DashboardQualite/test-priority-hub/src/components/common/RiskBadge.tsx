@@ -1,32 +1,26 @@
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 
 interface RiskBadgeProps {
-  level: 'high' | 'medium' | 'low';
+  riskLevel: 'high' | 'medium' | 'low';
   className?: string;
 }
 
-const levelLabels = {
-  high: 'HIGH',
-  medium: 'MEDIUM',
-  low: 'LOW',
-};
+export function RiskBadge({ riskLevel, className }: RiskBadgeProps) {
+  const styles = {
+    high: 'bg-red-100 text-red-800 border-red-300',
+    medium: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    low: 'bg-green-100 text-green-800 border-green-300',
+  };
 
-export function RiskBadge({ level, className }: RiskBadgeProps) {
   return (
-    <Badge
-      variant="outline"
+    <span
       className={cn(
-        'font-semibold text-xs uppercase',
-        {
-          'risk-badge-high': level === 'high',
-          'risk-badge-medium': level === 'medium',
-          'risk-badge-low': level === 'low',
-        },
+        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border',
+        styles[riskLevel],
         className
       )}
     >
-      {levelLabels[level]}
-    </Badge>
+      {riskLevel.toUpperCase()}
+    </span>
   );
 }
