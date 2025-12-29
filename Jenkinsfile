@@ -251,6 +251,10 @@ pipeline {
                                     // Use npm directly (installed in Jenkins image)
                                     sh """
                                         npm ci || npm install || echo 'npm install failed'
+                                        
+                                        # Ensure jsdom is installed (required for Vitest)
+                                        npm install --save-dev jsdom || echo 'jsdom install failed'
+                                        
                                         npm run lint || echo 'Lint skipped'
                                         npm run build || echo 'Build failed'
                                         
@@ -263,8 +267,12 @@ pipeline {
                                             ls -la coverage/ || echo 'Coverage directory listing failed'
                                             # Ensure LCOV report exists for SonarQube
                                             if [ ! -f coverage/lcov.info ]; then
-                                                echo 'Warning: coverage/lcov.info not found, trying to generate it'
+                                                echo 'Warning: coverage/lcov.info not found, checking alternative locations'
+                                                find . -name 'lcov.info' -type f || echo 'No lcov.info found anywhere'
+                                                # Try to generate it explicitly
                                                 npm test -- --coverage --reporter=verbose || echo 'LCOV generation failed'
+                                            else
+                                                echo '✅ LCOV report found at coverage/lcov.info'
                                             fi
                                         else
                                             echo 'Warning: Coverage directory not found, trying to generate it'
