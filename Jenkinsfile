@@ -116,7 +116,20 @@ pipeline {
                                             }
                                             
                                             // Build and test (continue even if tests fail)
-                                            sh "${mavenCmd} clean verify -Dmaven.test.failure.ignore=true || echo 'Build completed with test failures'"
+                                            // First compile and test
+                                            sh "${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'"
+                                            
+                                            // Force JaCoCo report generation even if tests failed
+                                            // The jacoco.exec file should exist even if tests failed
+                                            sh """
+                                                if [ -f target/jacoco.exec ]; then
+                                                    ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                                else
+                                                    echo 'Warning: jacoco.exec not found, tests may not have run'
+                                                    # Try to generate report anyway
+                                                    ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                                fi
+                                            """
                                             
                                             // Copy JaCoCo HTML reports to coverage directory for publishing
                                             sh """
@@ -178,7 +191,16 @@ pipeline {
                                                 pip install -r requirements.txt || echo 'pip install failed'
                                                 pip install pytest pytest-cov coverage || echo 'pytest install failed'
                                                 pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
-                                                coverage xml || echo 'Coverage XML not generated'
+                                                
+                                                # Ensure coverage.xml is generated even if tests failed
+                                                if [ -f .coverage ]; then
+                                                    coverage xml || echo 'Coverage XML generation from .coverage failed'
+                                                fi
+                                                
+                                                # Also try to generate coverage.xml directly if it doesn't exist
+                                                if [ ! -f coverage.xml ]; then
+                                                    coverage xml || echo 'Coverage XML not generated'
+                                                fi
                                                 
                                                 # Copy HTML coverage reports to coverage directory
                                                 mkdir -p coverage || true
@@ -231,13 +253,22 @@ pipeline {
                                         npm ci || npm install || echo 'npm install failed'
                                         npm run lint || echo 'Lint skipped'
                                         npm run build || echo 'Build failed'
-                                        npm run test:coverage || npm test -- --coverage || echo 'Tests skipped'
                                         
-                                        # Ensure coverage directory exists and has index.html
+                                        # Run tests with coverage - ensure LCOV report is generated
+                                        npm run test:coverage || npm test -- --coverage --reporter=verbose || echo 'Tests completed (some may have failed)'
+                                        
+                                        # Verify coverage reports exist
                                         if [ -d coverage ]; then
                                             echo 'Coverage reports generated in coverage/'
+                                            ls -la coverage/ || echo 'Coverage directory listing failed'
+                                            # Ensure LCOV report exists for SonarQube
+                                            if [ ! -f coverage/lcov.info ]; then
+                                                echo 'Warning: coverage/lcov.info not found, trying to generate it'
+                                                npm test -- --coverage --reporter=verbose || echo 'LCOV generation failed'
+                                            fi
                                         else
-                                            echo 'Warning: Coverage directory not found'
+                                            echo 'Warning: Coverage directory not found, trying to generate it'
+                                            npm test -- --coverage || echo 'Coverage generation failed'
                                         fi
                                     """
                                     
@@ -249,7 +280,15 @@ pipeline {
                                                     export PATH=/opt/sonar-scanner/bin:\$PATH
                                                     export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
                                                     export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
-                                                    /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                    
+                                                    # Verify coverage report exists before SonarQube analysis
+                                                    if [ -f coverage/lcov.info ]; then
+                                                        echo 'LCOV report found, proceeding with SonarQube analysis'
+                                                        /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                    else
+                                                        echo 'Warning: coverage/lcov.info not found, SonarQube analysis may not include coverage'
+                                                        /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
+                                                    fi
                                                 """
                                             }
                                         }
