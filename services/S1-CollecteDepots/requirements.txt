@@ -1,7 +1,7 @@
 # FastAPI and server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
+pydantic>=2.14.6  # Updated for Python 3.13 compatibility
 pydantic-settings==2.1.0
 
 # Eureka Service Discovery
