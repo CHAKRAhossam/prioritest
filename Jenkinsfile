@@ -139,10 +139,30 @@ pipeline {
                                                 fi
                                             """
                                             
+                                            // Verify JaCoCo XML report exists before SonarQube analysis
+                                            sh """
+                                                if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                    echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
+                                                    cat target/site/jacoco/jacoco.xml | head -20 || echo 'Could not read XML report'
+                                                else
+                                                    echo '⚠️ Warning: JaCoCo XML report not found at target/site/jacoco/jacoco.xml'
+                                                    echo 'Attempting to regenerate...'
+                                                    ${mavenCmd} jacoco:report || echo 'Failed to regenerate JaCoCo report'
+                                                fi
+                                            """
+                                            
                                             // SonarQube analysis
                                             if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                                 withSonarQubeEnv('SonarQube') {
-                                                    sh "${mavenCmd} sonar:sonar -Dsonar.qualitygate.wait=true || echo 'SonarQube analysis skipped'"
+                                                    sh """
+                                                        # Verify XML report exists before analysis
+                                                        if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                            echo 'Proceeding with SonarQube analysis with coverage report'
+                                                        else
+                                                            echo 'Warning: Proceeding without coverage report'
+                                                        fi
+                                                        ${mavenCmd} sonar:sonar -Dsonar.qualitygate.wait=true || echo 'SonarQube analysis skipped'
+                                                    """
                                                 }
                                             } else {
                                                 echo "SonarQube token not configured, skipping analysis for ${service}"
@@ -194,12 +214,25 @@ pipeline {
                                                 
                                                 # Ensure coverage.xml is generated even if tests failed
                                                 if [ -f .coverage ]; then
+                                                    echo 'Found .coverage file, generating XML report...'
                                                     coverage xml || echo 'Coverage XML generation from .coverage failed'
+                                                else
+                                                    echo 'Warning: .coverage file not found'
                                                 fi
                                                 
                                                 # Also try to generate coverage.xml directly if it doesn't exist
                                                 if [ ! -f coverage.xml ]; then
+                                                    echo 'Warning: coverage.xml not found, attempting to generate...'
                                                     coverage xml || echo 'Coverage XML not generated'
+                                                else
+                                                    echo '✅ coverage.xml found'
+                                                    # Verify it's not empty
+                                                    if [ -s coverage.xml ]; then
+                                                        echo '✅ coverage.xml is not empty'
+                                                        head -20 coverage.xml || echo 'Could not read coverage.xml'
+                                                    else
+                                                        echo '⚠️ Warning: coverage.xml is empty'
+                                                    fi
                                                 fi
                                                 
                                                 # Copy HTML coverage reports to coverage directory
@@ -221,6 +254,15 @@ pipeline {
                                                             export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
                                                             export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
                                                             . venv/bin/activate
+                                                            
+                                                            # Verify coverage.xml exists before SonarQube analysis
+                                                            if [ -f coverage.xml ]; then
+                                                                echo '✅ coverage.xml found, proceeding with SonarQube analysis'
+                                                                ls -lh coverage.xml || echo 'Could not list coverage.xml'
+                                                            else
+                                                                echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                            fi
+                                                            
                                                             /opt/sonar-scanner/bin/sonar-scanner -Dsonar.qualitygate.wait=true || echo "SonarQube scan skipped"
                                                         """
                                                     }
