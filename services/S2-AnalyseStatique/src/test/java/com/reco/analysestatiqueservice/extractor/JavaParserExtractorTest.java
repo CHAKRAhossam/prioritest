@@ -41,9 +41,9 @@ class JavaParserExtractorTest {
         List<FileScanResult> results = extractor.listJavaFilesDetailed(projectDir);
 
         assertEquals(2, results.size());
-        // FileScanResult now has: relativePath and absolutePath
-        assertTrue(results.stream().anyMatch(r -> r.getRelativePath().equals("Main.java")));
-        assertTrue(results.stream().anyMatch(r -> r.getRelativePath().equals("Utils.java")));
+        // FileScanResult has relativePath from project root
+        assertTrue(results.stream().anyMatch(r -> r.getRelativePath().equals("src/main/java/Main.java") || r.getRelativePath().endsWith("Main.java")));
+        assertTrue(results.stream().anyMatch(r -> r.getRelativePath().equals("src/main/java/Utils.java") || r.getRelativePath().endsWith("Utils.java")));
         // Verify absolute paths are set
         assertTrue(results.stream().allMatch(r -> r.getAbsolutePath() != null && !r.getAbsolutePath().isEmpty()));
     }
