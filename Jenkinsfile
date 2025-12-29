@@ -118,6 +118,14 @@ pipeline {
                                             // Build and test (continue even if tests fail)
                                             sh "${mavenCmd} clean verify -Dmaven.test.failure.ignore=true || echo 'Build completed with test failures'"
                                             
+                                            // Copy JaCoCo HTML reports to coverage directory for publishing
+                                            sh """
+                                                mkdir -p coverage || true
+                                                if [ -d target/site/jacoco ]; then
+                                                    cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                                fi
+                                            """
+                                            
                                             // SonarQube analysis
                                             if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                                 withSonarQubeEnv('SonarQube') {
@@ -171,6 +179,15 @@ pipeline {
                                                 pip install pytest pytest-cov coverage || echo 'pytest install failed'
                                                 pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
                                                 coverage xml || echo 'Coverage XML not generated'
+                                                
+                                                # Copy HTML coverage reports to coverage directory
+                                                mkdir -p coverage || true
+                                                if [ -d htmlcov ]; then
+                                                    cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                                elif [ -d coverage ]; then
+                                                    # Coverage already in coverage/ directory
+                                                    echo 'Coverage reports already in coverage/'
+                                                fi
                                             """
                                             
                                             // SonarQube analysis
@@ -214,7 +231,14 @@ pipeline {
                                         npm ci || npm install || echo 'npm install failed'
                                         npm run lint || echo 'Lint skipped'
                                         npm run build || echo 'Build failed'
-                                        npm test -- --coverage || echo 'Tests skipped'
+                                        npm run test:coverage || npm test -- --coverage || echo 'Tests skipped'
+                                        
+                                        # Ensure coverage directory exists and has index.html
+                                        if [ -d coverage ]; then
+                                            echo 'Coverage reports generated in coverage/'
+                                        else
+                                            echo 'Warning: Coverage directory not found'
+                                        fi
                                     """
                                     
                                     // SonarQube analysis
@@ -368,16 +392,50 @@ pipeline {
                     echo "No JUnit reports found: ${e.getMessage()}"
                 }
                 try {
-                    // Use HTML Publisher plugin (now installed)
-                    // Only publish if coverage directory exists
-                    if (fileExists('coverage/index.html')) {
-                        publishHTML([
-                            reportDir: 'coverage',
-                            reportFiles: 'index.html',
-                            reportName: 'Coverage Report'
-                        ])
-                    } else {
-                        echo "No coverage reports found in coverage/ directory"
+                    // Collect coverage reports from all services
+                    script {
+                        def coverageFound = false
+                        
+                        // Check Java services (JaCoCo HTML reports)
+                        def javaServices = ['S0-ApiGateway', 'S2-AnalyseStatique', 'S3-HistoriqueTests', 'S9-Integrations']
+                        javaServices.each { service ->
+                            def coveragePath = "services/${service}/coverage/index.html"
+                            if (fileExists(coveragePath)) {
+                                echo "Found coverage report for ${service}"
+                                coverageFound = true
+                            }
+                        }
+                        
+                        // Check Python services (pytest-cov HTML reports)
+                        def pythonServices = ['S1-CollecteDepots', 'S4-PretraitementFeatures', 'S5-MLService', 'S6-MoteurPriorisation', 'S7-TestScaffolder']
+                        pythonServices.each { service ->
+                            def coveragePath = "services/${service}/coverage/index.html"
+                            if (fileExists(coveragePath)) {
+                                echo "Found coverage report for ${service}"
+                                coverageFound = true
+                            }
+                        }
+                        
+                        // Check Frontend (Vitest coverage)
+                        def frontendPath = "services/S8-DashboardQualite/test-priority-hub/coverage/index.html"
+                        if (fileExists(frontendPath)) {
+                            echo "Found coverage report for Frontend"
+                            coverageFound = true
+                        }
+                        
+                        // Try to publish from root coverage directory
+                        if (fileExists('coverage/index.html')) {
+                            publishHTML([
+                                reportDir: 'coverage',
+                                reportFiles: 'index.html',
+                                reportName: 'Coverage Report'
+                            ])
+                            coverageFound = true
+                        }
+                        
+                        if (!coverageFound) {
+                            echo "No coverage reports found in any service directory"
+                        }
                     }
                 } catch (Exception e) {
                     echo "Could not publish coverage report: ${e.getMessage()}"

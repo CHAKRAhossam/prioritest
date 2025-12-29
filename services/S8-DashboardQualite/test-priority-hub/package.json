@@ -11,7 +11,7 @@
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --reporter=verbose",
     "preview": "vite preview"
   },
   "dependencies": {
