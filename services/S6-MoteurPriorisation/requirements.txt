@@ -1,7 +1,7 @@
 # FastAPI & Server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
+pydantic>=2.14.6  # Updated for Python 3.13 compatibility
 pydantic-settings==2.1.0
 
 # Eureka Service Discovery
@@ -13,7 +13,7 @@ sqlalchemy==2.0.23
 alembic==1.13.1
 
 # Optimization
-ortools==9.8.3296
+ortools>=9.12.4544
 
 # HTTP Client
 httpx==0.25.2
