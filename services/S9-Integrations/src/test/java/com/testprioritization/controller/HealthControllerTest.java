@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -16,6 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @WebFluxTest(HealthController.class)
+@ActiveProfiles("test")
 class HealthControllerTest {
 
     @Autowired
@@ -68,18 +70,22 @@ class HealthControllerTest {
 
     @Test
     void testReadiness() {
-        // Mock WebClient responses
-        WebClient.RequestHeadersUriSpec requestHeadersUriSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersUriSpec.class);
-        WebClient.RequestHeadersSpec requestHeadersSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersSpec.class);
+        // Mock WebClient responses using doReturn to avoid type issues
+        @SuppressWarnings("unchecked")
+        WebClient.RequestHeadersUriSpec<?> trainingRequestHeadersUriSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersUriSpec.class);
+        @SuppressWarnings("unchecked")
+        WebClient.RequestHeadersUriSpec<?> prioritizationRequestHeadersUriSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersUriSpec.class);
+        @SuppressWarnings("unchecked")
+        WebClient.RequestHeadersSpec<?> requestHeadersSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersSpec.class);
         WebClient.ResponseSpec responseSpec = org.mockito.Mockito.mock(WebClient.ResponseSpec.class);
 
-        when(trainingWebClient.get()).thenReturn(requestHeadersUriSpec);
-        when(requestHeadersUriSpec.uri(any(String.class))).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+        org.mockito.Mockito.doReturn(trainingRequestHeadersUriSpec).when(trainingWebClient).get();
+        org.mockito.Mockito.doReturn(requestHeadersSpec).when(trainingRequestHeadersUriSpec).uri(any(String.class));
+        org.mockito.Mockito.doReturn(responseSpec).when(requestHeadersSpec).retrieve();
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "UP")));
 
-        when(prioritizationWebClient.get()).thenReturn(requestHeadersUriSpec);
-        when(prioritizationWebClient.get().uri(any(String.class))).thenReturn(requestHeadersSpec);
+        org.mockito.Mockito.doReturn(prioritizationRequestHeadersUriSpec).when(prioritizationWebClient).get();
+        org.mockito.Mockito.doReturn(requestHeadersSpec).when(prioritizationRequestHeadersUriSpec).uri(any(String.class));
 
         webTestClient.get()
                 .uri("/v1/health/ready")
@@ -91,18 +97,22 @@ class HealthControllerTest {
 
     @Test
     void testHealth() {
-        // Mock WebClient responses
-        WebClient.RequestHeadersUriSpec requestHeadersUriSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersUriSpec.class);
-        WebClient.RequestHeadersSpec requestHeadersSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersSpec.class);
+        // Mock WebClient responses using doReturn to avoid type issues
+        @SuppressWarnings("unchecked")
+        WebClient.RequestHeadersUriSpec<?> trainingRequestHeadersUriSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersUriSpec.class);
+        @SuppressWarnings("unchecked")
+        WebClient.RequestHeadersUriSpec<?> prioritizationRequestHeadersUriSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersUriSpec.class);
+        @SuppressWarnings("unchecked")
+        WebClient.RequestHeadersSpec<?> requestHeadersSpec = org.mockito.Mockito.mock(WebClient.RequestHeadersSpec.class);
         WebClient.ResponseSpec responseSpec = org.mockito.Mockito.mock(WebClient.ResponseSpec.class);
 
-        when(trainingWebClient.get()).thenReturn(requestHeadersUriSpec);
-        when(requestHeadersUriSpec.uri(any(String.class))).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+        org.mockito.Mockito.doReturn(trainingRequestHeadersUriSpec).when(trainingWebClient).get();
+        org.mockito.Mockito.doReturn(requestHeadersSpec).when(trainingRequestHeadersUriSpec).uri(any(String.class));
+        org.mockito.Mockito.doReturn(responseSpec).when(requestHeadersSpec).retrieve();
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "UP")));
 
-        when(prioritizationWebClient.get()).thenReturn(requestHeadersUriSpec);
-        when(prioritizationWebClient.get().uri(any(String.class))).thenReturn(requestHeadersSpec);
+        org.mockito.Mockito.doReturn(prioritizationRequestHeadersUriSpec).when(prioritizationWebClient).get();
+        org.mockito.Mockito.doReturn(requestHeadersSpec).when(prioritizationRequestHeadersUriSpec).uri(any(String.class));
 
         webTestClient.get()
                 .uri("/v1/health")
