@@ -2,7 +2,6 @@ package com.testprioritization.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.testprioritization.config.AppProperties;
-import com.testprioritization.model.webhook.GitLabWebhook;
 import com.testprioritization.service.CommentGeneratorService;
 import com.testprioritization.service.GitLabService;
 import com.testprioritization.service.PolicyGateService;
@@ -12,16 +11,21 @@ import io.opentelemetry.api.trace.Tracer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
+import reactor.core.publisher.Mono;
+import java.util.Map;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(GitLabWebhookController.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureWebTestClient
 @ActiveProfiles("test")
 class GitLabWebhookControllerTest {
 
@@ -63,7 +67,10 @@ class GitLabWebhookControllerTest {
                     "iid": 123,
                     "state": "opened",
                     "source_branch": "feature-branch",
-                    "target_branch": "main"
+                    "target_branch": "main",
+                    "last_commit": {
+                        "id": "abc123"
+                    }
                 },
                 "project": {
                     "id": 1,
@@ -71,6 +78,28 @@ class GitLabWebhookControllerTest {
                 }
             }
             """;
+        
+        // Mock AppProperties to avoid token validation
+        when(appProperties.getGitlab()).thenReturn(new AppProperties.GitLab());
+        when(appProperties.getGitlab().getWebhookSecret()).thenReturn(null);
+        
+        // Mock services to return empty results
+        when(gitLabService.createCommitStatus(any(), any(), any()))
+            .thenReturn(Mono.just(Map.of()));
+        when(gitLabService.getMRChanges(any(), any()))
+            .thenReturn(Mono.just(java.util.Collections.emptyList()));
+        when(riskAnalyzerService.analyzeRisk(any(), any(), any(), any()))
+            .thenReturn(Mono.just(new com.testprioritization.model.response.RiskAnalysisResult()));
+        when(policyGateService.evaluatePolicy(any()))
+            .thenReturn(com.testprioritization.service.PolicyGateService.PolicyGateResult.builder()
+                .passed(true)
+                .shouldBlock(false)
+                .violations(java.util.Collections.emptyList())
+                .build());
+        when(commentGeneratorService.generateComment(any(), any()))
+            .thenReturn(new com.testprioritization.model.response.PRComment());
+        when(gitLabService.postMRNote(any(), any(), any()))
+            .thenReturn(Mono.just(Map.of()));
     }
 
     @Test

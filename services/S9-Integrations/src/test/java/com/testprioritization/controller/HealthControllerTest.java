@@ -4,7 +4,8 @@ import com.testprioritization.config.AppProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -16,7 +17,8 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(HealthController.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureWebTestClient
 @ActiveProfiles("test")
 class HealthControllerTest {
 
@@ -26,10 +28,10 @@ class HealthControllerTest {
     @MockBean
     private AppProperties appProperties;
 
-    @MockBean(name = "trainingWebClient")
+    @MockBean
     private WebClient trainingWebClient;
 
-    @MockBean(name = "prioritizationWebClient")
+    @MockBean
     private WebClient prioritizationWebClient;
 
     @MockBean
@@ -86,6 +88,8 @@ class HealthControllerTest {
 
         org.mockito.Mockito.doReturn(prioritizationRequestHeadersUriSpec).when(prioritizationWebClient).get();
         org.mockito.Mockito.doReturn(requestHeadersSpec).when(prioritizationRequestHeadersUriSpec).uri(any(String.class));
+        org.mockito.Mockito.doReturn(responseSpec).when(requestHeadersSpec).retrieve();
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "UP")));
 
         webTestClient.get()
                 .uri("/v1/health/ready")
@@ -113,6 +117,8 @@ class HealthControllerTest {
 
         org.mockito.Mockito.doReturn(prioritizationRequestHeadersUriSpec).when(prioritizationWebClient).get();
         org.mockito.Mockito.doReturn(requestHeadersSpec).when(prioritizationRequestHeadersUriSpec).uri(any(String.class));
+        org.mockito.Mockito.doReturn(responseSpec).when(requestHeadersSpec).retrieve();
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "UP")));
 
         webTestClient.get()
                 .uri("/v1/health")
