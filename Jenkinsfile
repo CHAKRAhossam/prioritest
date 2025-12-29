@@ -117,16 +117,38 @@ pipeline {
                                             
                                             // Build and test (continue even if tests fail)
                                             // First compile and test
-                                            sh "${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'"
+                                            sh """
+                                                echo 'Running tests for ${service}...'
+                                                ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                                
+                                                # Check if tests actually ran
+                                                if [ -d target/surefire-reports ]; then
+                                                    echo '✅ Surefire reports directory exists'
+                                                    TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                                    echo "Found \${TEST_COUNT} test report files"
+                                                    if [ \${TEST_COUNT} -eq 0 ]; then
+                                                        echo '⚠️ Warning: No test reports found - tests may not have executed'
+                                                    fi
+                                                else
+                                                    echo '⚠️ Warning: target/surefire-reports directory not found'
+                                                fi
+                                            """
                                             
                                             // Force JaCoCo report generation even if tests failed
                                             // The jacoco.exec file should exist even if tests failed
                                             sh """
+                                                echo 'Checking JaCoCo execution data...'
                                                 if [ -f target/jacoco.exec ]; then
+                                                    echo '✅ jacoco.exec found'
+                                                    FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
+                                                    echo "jacoco.exec size: \${FILE_SIZE} bytes"
+                                                    if [ \${FILE_SIZE} -eq 0 ]; then
+                                                        echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
+                                                    fi
                                                     ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
                                                 else
-                                                    echo 'Warning: jacoco.exec not found, tests may not have run'
-                                                    # Try to generate report anyway
+                                                    echo '⚠️ Warning: jacoco.exec not found, tests may not have run'
+                                                    echo 'Attempting to generate report anyway...'
                                                     ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
                                                 fi
                                             """
