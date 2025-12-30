@@ -25,6 +25,9 @@ PRIORITEST est une plateforme microservices avancée qui automatise la priorisat
 
 La plateforme analyse automatiquement vos dépôts Git, génère des prédictions ML, et crée un plan de tests priorisé optimisé pour maximiser la détection de défauts avec un budget d'effort limité.
 
+
+
+
 ---
 
 ## 🎥 Démo Vidéo
@@ -33,11 +36,8 @@ La plateforme analyse automatiquement vos dépôts Git, génère des prédiction
 
 ### 🎬 Vidéo de Démonstration Complète
 
-<video width="800" controls>
-  <source src="docs/DEMO.mp4" type="video/mp4">
-  Votre navigateur ne supporte pas la lecture de vidéos HTML5. 
-  <a href="docs/DEMO.mp4">Télécharger la vidéo</a> pour la regarder.
-</video>
+https://github.com/user-attachments/assets/cef283ff-4a4a-481f-b636-0f7a488049ec
+
 
 **Langue :** Français
 
