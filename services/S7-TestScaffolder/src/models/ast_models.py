@@ -77,3 +77,5 @@ class ClassAnalysis(BaseModel):
 
 
 
+
+

@@ -221,7 +221,9 @@ services:
 
   # MLflow
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.8.1
+    build:
+      context: ./infrastructure/mlflow
+      dockerfile: Dockerfile
     container_name: prioritest-mlflow
     command: mlflow server --backend-store-uri postgresql://prioritest:prioritest@postgres:5432/prioritest --default-artifact-root s3://mlflow/artifacts --host 0.0.0.0 --port 5000
     ports:
@@ -233,6 +235,83 @@ services:
     depends_on:
       - postgres
       - minio
+    networks:
+      - prioritest-network
+
+  # Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: prioritest-kafka-ui
+    ports:
+      - "8083:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    depends_on:
+      - kafka
+      - zookeeper
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: prioritest-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service S9 - Integrations
+  integrations:
+    build:
+      context: ./services/S9-Integrations
+      dockerfile: Dockerfile
+    container_name: prioritest-integrations
+    ports:
+      - "8009:8080"
+    environment:
+      # Application
+      APP_NAME: Integrations
+      LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/prioritest
+      SPRING_DATASOURCE_USERNAME: prioritest
+      SPRING_DATASOURCE_PASSWORD: prioritest
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Server
+      SERVER_PORT: 8080
+    depends_on:
+      - postgres
+      - redis
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # Service S1 - CollecteDepots
   collecte-depots:
@@ -577,6 +656,7 @@ volumes:
   pretraitement_features_data:
   pretraitement_features_feature_repo:
   ml_service_models:
+  redis_data:
   jenkins_data:
   sonarqube_data:
   sonarqube_extensions:

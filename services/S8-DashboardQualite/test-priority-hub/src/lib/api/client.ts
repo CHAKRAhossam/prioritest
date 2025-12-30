@@ -4,7 +4,7 @@ import axios from 'axios';
 // In production, this would be the API gateway URL
 // Default to API Gateway if not set (for browser access)
 // Note: Don't include /api here - it's added in the route paths below
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8090';
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
@@ -185,6 +185,8 @@ export const api = {
     apiClient.get<CollectionStatus>('/api/s1/collect/status'),
   triggerCollection: (data: CollectRequest) => 
     apiClient.post('/api/s1/collect', data),
+  analyzeFull: (repositoryUrl: string) =>
+    apiClient.post('/api/s1/collect/analyze-full', { repository_url: repositoryUrl, collect_type: 'commits|issues|ci_reports' }),
   getRepositoryBranches: (repositoryUrl: string) =>
     apiClient.get<{ repository_url: string; source: string; branches: Array<{ name: string; commit_sha: string; protected: boolean }>; count: number }>('/api/s1/collect/branches', { params: { repository_url: repositoryUrl } }),
   listRepositories: (source?: string) =>
@@ -356,8 +358,12 @@ export const api = {
   // S6 - Prioritization (port 8006)
   getPrioritization: (repoId: string, strategy?: string) => 
     apiClient.get<PrioritizationResponse>(`/api/s6/prioritize/${repoId}`, { params: { strategy } }),
-  createPrioritization: (data: PrioritizationRequest) => 
-    apiClient.post<PrioritizationResponse>('/api/s6/prioritize', data),
+  createPrioritization: (data: PrioritizationRequest) => {
+    const { strategy, ...bodyData } = data;
+    return apiClient.post<PrioritizationResponse>('/api/s6/prioritize', bodyData, {
+      params: strategy ? { strategy } : {}
+    });
+  },
   
   // S4 - Preprocessing Features (port 8000)
   runPreprocessingPipeline: () =>
