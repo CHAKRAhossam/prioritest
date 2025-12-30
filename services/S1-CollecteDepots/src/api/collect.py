@@ -137,6 +137,165 @@ async def collect_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/analyze-full", status_code=202)
+async def analyze_full(
+    request: CollectRequest,
+    services: dict = Depends(get_services),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """
+    Orchestrate full analysis pipeline: S1 -> S2 -> S4 -> S5 -> S6.
+    
+    This endpoint:
+    1. Creates/gets repository in S1 database
+    2. Collects commits and publishes to Kafka
+    3. Waits for S2 to process commits (via Kafka)
+    4. Triggers S4 preprocessing
+    5. Triggers S5 ML predictions
+    6. Triggers S6 prioritization
+    
+    Args:
+        repository_url: Full repository URL (e.g., https://github.com/owner/repo)
+    
+    Returns:
+        dict: Status of the analysis pipeline
+    """
+    try:
+        url_str = str(request.repository_url)
+        
+        # Determine source
+        if "github.com" in url_str:
+            source = "github"
+            repo_full_name = url_str.replace("https://github.com/", "").replace(".git", "")
+        elif "gitlab.com" in url_str or "gitlab" in url_str:
+            source = "gitlab"
+            parts = url_str.replace("https://", "").replace("http://", "").split("/")
+            if len(parts) >= 3:
+                repo_full_name = "/".join(parts[2:]).replace(".git", "")
+            else:
+                raise HTTPException(status_code=400, detail="Invalid GitLab URL")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported repository URL")
+        
+        # Get repository ID
+        db = services["db"]
+        github = services.get("github")
+        if source == "github" and github:
+            repository_id = github._get_repo_id(repo_full_name)
+        else:
+            # Fallback: generate ID from URL
+            repository_id = f"github_{repo_full_name.replace('/', '_')}" if source == "github" else f"gitlab_{repo_full_name.replace('/', '_')}"
+        
+        # Create repository in database first
+        repo = db.get_or_create_repository(
+            repository_id=repository_id,
+            name=repo_full_name.split("/")[-1],
+            full_name=repo_full_name,
+            url=url_str,
+            source=source
+        )
+        
+        logger.info(f"Starting full analysis pipeline for {repository_id}")
+        
+        # Schedule background task for full pipeline
+        background_tasks.add_task(
+            _run_async_pipeline_steps,
+            repository_id,
+            repo_full_name,
+            source,
+            url_str,
+            services
+        )
+        
+        return {
+            "status": "accepted",
+            "message": "Full analysis pipeline started",
+            "repository_id": repository_id,
+            "repository_url": url_str
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting full analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _run_async_pipeline_steps(
+    repository_id: str,
+    repo_full_name: str,
+    source: str,
+    url_str: str,
+    services: dict
+):
+    """Run the full analysis pipeline steps asynchronously."""
+    import time
+    
+    try:
+        # Step 1: Collect commits and publish to Kafka (S1)
+        logger.info(f"Step 1: Collecting commits for {repo_full_name}")
+        _process_collection(
+            source,
+            repo_full_name,
+            ["commits", "issues", "ci_reports"],
+            None,
+            None,
+            services
+        )
+        
+        # Step 2: Wait for S2 to process Kafka events
+        logger.info("Step 2: Waiting for S2 static analysis to process Kafka events...")
+        time.sleep(10)  # Give S2 time to process commits
+        
+        # Step 3: Trigger S4 preprocessing
+        logger.info("Step 3: Triggering S4 preprocessing...")
+        try:
+            s4_response = requests.post(
+                "http://prioritest-pretraitement-features:8000/api/v1/preprocess",
+                json={"repository_id": repository_id},
+                timeout=30
+            )
+            if s4_response.status_code == 200:
+                logger.info("S4 preprocessing completed")
+            else:
+                logger.warning(f"S4 preprocessing failed: {s4_response.status_code}")
+        except Exception as e:
+            logger.warning(f"S4 preprocessing failed: {e}")
+        
+        # Step 4: Trigger S5 ML predictions
+        logger.info("Step 4: Triggering S5 ML predictions...")
+        try:
+            s5_response = requests.post(
+                "http://prioritest-ml-service:8001/api/v1/predict/batch",
+                json={"repository_id": repository_id},
+                timeout=60
+            )
+            if s5_response.status_code == 200:
+                logger.info("S5 predictions completed")
+            else:
+                logger.warning(f"S5 predictions failed: {s5_response.status_code}")
+        except Exception as e:
+            logger.warning(f"S5 predictions failed: {e}")
+        
+        # Step 5: Trigger S6 prioritization
+        logger.info("Step 5: Triggering S6 prioritization...")
+        try:
+            s6_response = requests.post(
+                "http://prioritest-moteur-priorisation:8006/api/v1/prioritize?strategy=maximize_popt20",
+                json={"repository_id": repository_id, "branch": "main"},
+                timeout=60
+            )
+            if s6_response.status_code == 200:
+                logger.info("S6 prioritization completed")
+            else:
+                logger.warning(f"S6 prioritization failed: {s6_response.status_code}")
+        except Exception as e:
+            logger.warning(f"S6 prioritization failed: {e}")
+        
+        logger.info(f"Full analysis pipeline completed for {repository_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in full analysis pipeline: {e}")
+
+
 def _process_collection(
     source: str,
     repo_identifier: str,
@@ -271,16 +430,17 @@ def _process_collection(
             repository_id = None
             if source == "github":
                 github = services["github"]
-                # Get repo if not already created
+                # Get repository_id directly to avoid session issues
+                repository_id = github._get_repo_id(repo_identifier)
+                # Ensure repo exists (but don't use the returned object outside session)
                 if not repo:
-                    repo = db.get_or_create_repository(
-                        repository_id=github._get_repo_id(repo_identifier),
+                    db.get_or_create_repository(
+                        repository_id=repository_id,
                         name=repo_identifier.split("/")[-1],
                         full_name=repo_identifier,
                         url=f"https://github.com/{repo_identifier}",
                         source="github"
                     )
-                repository_id = repo.id
                 
                 artifacts = github.collect_ci_artifacts(repo_identifier, branch="main", max_runs=10)
                 
@@ -484,15 +644,15 @@ async def list_repositories(
         return {
             "repositories": [
                 {
-                    "id": repo.id,
-                    "name": repo.name,
-                    "full_name": repo.full_name,
-                    "url": repo.url,
-                    "source": repo.source,
-                    "default_branch": repo.default_branch,
-                    "created_at": repo.created_at.isoformat() if repo.created_at else None,
-                    "updated_at": repo.updated_at.isoformat() if repo.updated_at else None,
-                    "metadata": repo.metadata_json or {}
+                    "id": repo["id"],
+                    "name": repo["name"],
+                    "full_name": repo["full_name"],
+                    "url": repo["url"],
+                    "source": repo["source"],
+                    "default_branch": repo["default_branch"],
+                    "created_at": repo["created_at"],
+                    "updated_at": repo["updated_at"],
+                    "metadata": repo["metadata_json"]
                 }
                 for repo in repos
             ],
@@ -687,15 +847,15 @@ async def list_repositories(
         return {
             "repositories": [
                 {
-                    "id": repo.id,
-                    "name": repo.name,
-                    "full_name": repo.full_name,
-                    "url": repo.url,
-                    "source": repo.source,
-                    "default_branch": repo.default_branch,
-                    "created_at": repo.created_at.isoformat() if repo.created_at else None,
-                    "updated_at": repo.updated_at.isoformat() if repo.updated_at else None,
-                    "metadata": repo.metadata_json or {}
+                    "id": repo["id"],
+                    "name": repo["name"],
+                    "full_name": repo["full_name"],
+                    "url": repo["url"],
+                    "source": repo["source"],
+                    "default_branch": repo["default_branch"],
+                    "created_at": repo["created_at"],
+                    "updated_at": repo["updated_at"],
+                    "metadata": repo["metadata_json"]
                 }
                 for repo in repos
             ],

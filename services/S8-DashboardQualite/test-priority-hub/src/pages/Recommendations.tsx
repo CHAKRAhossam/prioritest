@@ -458,7 +458,7 @@ export default function Recommendations() {
       `${(item.riskScore * 100).toFixed(0)}%`,
       item.effortHours,
       `${item.coverage}%`,
-      item.criticality.toUpperCase(),
+      item.criticality?.toUpperCase() || 'MEDIUM',
     ]);
 
     const csvContent = [headers, ...rows].map((row) => row.join(',')).join('\n');
@@ -931,7 +931,7 @@ export default function Recommendations() {
                               {item.coverage !== null ? `${item.coverage}%` : 'N/A'}
                             </TableCell>
                             <TableCell>
-                              <RiskBadge level={item.criticality} />
+                              <RiskBadge level={item.criticality || 'medium'} />
                             </TableCell>
                             <TableCell className="text-right">
                               <Button

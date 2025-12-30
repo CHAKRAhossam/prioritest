@@ -6,16 +6,15 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY bun.lockb ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
 
 # Accept build-time environment variable
-ARG VITE_API_URL=http://localhost:8080/api
+ARG VITE_API_URL=http://localhost:8090/api
 ENV VITE_API_URL=$VITE_API_URL
 
 # Build the application

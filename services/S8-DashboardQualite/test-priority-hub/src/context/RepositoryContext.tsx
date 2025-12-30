@@ -56,7 +56,6 @@ const isFakeRepository = (repo: Repository): boolean => {
   // Filter out repositories with suspicious patterns
   const fakePatterns = [
     'marketplace',
-    'chakrahossam',
     'com.example',
     'offline.fallback',
     'mock',
@@ -168,39 +167,26 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     // If repo has URL, register it with S1 and trigger full workflow
     if (repo.url) {
       try {
-        // Trigger full collection workflow: commits + issues + ci_reports
+        // First, trigger basic collection to create repository in S1 database
+        await api.triggerCollection({
+          repository_url: repo.url,
+          collect_type: 'commits|issues|ci_reports',
+        });
+        
+        // Then trigger full analysis pipeline (S1 -> S2 -> S4 -> S5 -> S6)
         // This will:
-        // 1. Create repository in S1 database
+        // 1. Create repository in S1 database (already done above)
         // 2. Collect commits and publish to Kafka (repository.commits)
         // 3. S2 will automatically consume Kafka events and analyze code
-        // 4. S2 publishes metrics to Kafka/Feast
-        // 5. Collect CI/CD artifacts (JaCoCo/PIT) from GitHub Actions
-        // 6. S3 will automatically consume Kafka events (ci.artifacts) and process coverage
-        // 7. S4, S5, S6 can then use the data for prioritization
-        const response = await fetch('/api/s1/collect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            repository_url: repo.url,
-            collect_type: 'commits|issues|ci_reports', // Collect commits, issues, and CI/CD artifacts
-          }),
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-        
-        const result = await response.json();
-        console.log('[RepositoryContext] Repository collection started:', {
+        // 4. S4 preprocesses features
+        // 5. S5 generates ML predictions
+        // 6. S6 creates prioritization
+        const analyzeResponse = await api.analyzeFull(repo.url);
+        console.log('[RepositoryContext] Full analysis pipeline started:', {
           repoId: repo.id,
-          status: result.status,
-          message: result.message,
-          collectTypes: result.collect_types,
+          status: analyzeResponse.data.status,
+          message: analyzeResponse.data.message,
         });
-        
-        // Note: Collection happens in background. S2 will automatically process commits via Kafka.
-        // The workflow: S1 → Kafka → S2 → Kafka/Feast → S4 → S5 → S6 → S8
       } catch (error) {
         console.error('[RepositoryContext] Failed to start repository collection:', error);
         // Continue anyway - add to local state, user can retry later
