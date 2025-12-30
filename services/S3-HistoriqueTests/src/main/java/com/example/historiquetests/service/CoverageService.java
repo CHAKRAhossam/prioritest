@@ -131,6 +131,13 @@ public class CoverageService {
     }
     
     /**
+     * Get coverage history by repository and branch
+     */
+    public List<TestCoverage> getCoverageHistoryByRepositoryAndBranch(String repositoryId, String branch) {
+        return coverageRepository.findCoverageHistoryByRepositoryAndBranch(repositoryId, branch);
+    }
+    
+    /**
      * Find classes with low coverage
      */
     public List<TestCoverage> findLowCoverageClasses(double threshold) {

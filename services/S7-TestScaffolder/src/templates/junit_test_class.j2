@@ -34,6 +34,12 @@ class {{ test_class_name }} {
 {% for field in mock_fields %}
         // {{ field.name }} est déjà mocké par @Mock
 {% endfor %}
+{% if mock_setup_lines %}
+        // Configuration des mocks
+{% for line in mock_setup_lines %}
+{{ line }}
+{% endfor %}
+{% endif %}
     }
 {% if test_methods %}
 
@@ -59,7 +65,14 @@ class {{ test_class_name }} {
         // Assert
 {% if method.is_void %}
         // Vérifier les effets de bord si nécessaire
+{% if method.mock_verify_lines %}
+{% for line in method.mock_verify_lines %}
+{{ line }}
+{% endfor %}
+{% else %}
         // TODO: Ajouter des vérifications (verify, assertions, etc.)
+        // Exemple: verify(mockRepository, times(1)).deleteById(any());
+{% endif %}
 {% else %}
         assertNotNull(result, "Le résultat ne devrait pas être null");
         // TODO: Ajouter des assertions spécifiques

@@ -14,6 +14,8 @@ public interface TestFlakinessRepository extends JpaRepository<TestFlakiness, Lo
     
     Optional<TestFlakiness> findByTestClassAndTestName(String testClass, String testName);
     
+    Optional<TestFlakiness> findByTestClassAndTestNameAndRepositoryId(String testClass, String testName, String repositoryId);
+    
     List<TestFlakiness> findByFlakinessScoreGreaterThan(double threshold);
     
     @Query("SELECT tf FROM TestFlakiness tf ORDER BY tf.flakinessScore DESC")

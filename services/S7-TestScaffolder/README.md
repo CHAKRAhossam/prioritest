@@ -67,6 +67,19 @@ Une fois le service démarré :
 - **ReDoc** : http://localhost:8007/redoc
 - **OpenAPI JSON** : http://localhost:8007/openapi.json
 
+### Endpoint Principal ⭐
+
+**POST /api/v1/generate-complete** : Endpoint complet qui exécute tout le workflow :
+1. Analyse AST de la classe
+2. Génération de test JUnit avec Mockito
+3. Suggestions de cas de test
+4. Checklist mutation testing
+5. Stockage Git (optionnel)
+
+C'est l'endpoint recommandé pour une utilisation complète du service.
+
+Voir la section "API Endpoints" ci-dessous pour tous les détails.
+
 ## Docker
 
 ```bash
@@ -80,12 +93,164 @@ docker run -p 8007:8007 s7-test-scaffolder
 
 ## User Stories
 
-- **MTP-S7-79** : Créer la structure de base ✅
-- **US-S7-01** : Analyse AST pour génération
-- **US-S7-02** : Génération templates JUnit
-- **US-S7-03** : Suggestions cas de test
-- **US-S7-04** : Génération mocks
-- **US-S7-05** : Checklist mutation testing
-- **US-S7-06** : Stockage suggestions
-- **US-S7-07** : API de génération
+- **MTP-78** : Créer la structure de base ✅
+- **MTP-48** : Analyse AST pour génération ✅
+- **MTP-49** : Génération templates JUnit ✅
+- **MTP-50** : Suggestions cas de test ✅
+- **MTP-51** : Génération mocks ✅
+- **MTP-52** : Checklist mutation testing ✅
+- **MTP-53** : Stockage suggestions ✅
+- **MTP-54** : API de génération complète ✅
+
+## API Endpoints
+
+### POST /api/v1/analyze
+Analyse une classe Java et extrait ses informations (AST).
+
+**Request:**
+```json
+{
+  "java_code": "package com.example; public class UserService {}",
+  "file_path": "src/main/java/com/example/UserService.java"
+}
+```
+
+**Response:**
+```json
+{
+  "analysis": {
+    "class_name": "UserService",
+    "package_name": "com.example",
+    "methods": [...],
+    "fields": [...],
+    "imports": [...]
+  }
+}
+```
+
+### POST /api/v1/generate-test
+Génère un squelette de test JUnit complet.
+
+**Request:**
+```json
+{
+  "java_code": "...",
+  "test_package": "com.example.test",
+  "test_class_suffix": "Test"
+}
+```
+
+**Response:**
+```json
+{
+  "test_code": "package com.example.test; ...",
+  "test_class_name": "UserServiceTest",
+  "test_package": "com.example.test",
+  "analysis": {...}
+}
+```
+
+### POST /api/v1/suggest-test-cases
+Génère des suggestions de cas de test.
+
+**Request:**
+```json
+{
+  "java_code": "...",
+  "include_private": false
+}
+```
+
+**Response:**
+```json
+{
+  "class_name": "UserService",
+  "method_suggestions": [...],
+  "total_suggestions": 15,
+  "coverage_estimate": 0.75
+}
+```
+
+### POST /api/v1/mutation-checklist
+Génère une checklist de mutation testing.
+
+**Request:**
+```json
+{
+  "java_code": "...",
+  "include_private": false
+}
+```
+
+**Response:**
+```json
+{
+  "class_name": "UserService",
+  "method_checklists": [...],
+  "total_items": 20,
+  "coverage_estimate": 0.80
+}
+```
+
+### POST /api/v1/save-suggestions
+Sauvegarde les tests et suggestions dans Git.
+
+**Request:**
+```json
+{
+  "java_code": "...",
+  "branch": "feature/add-tests",
+  "commit_message": "feat: Add generated tests",
+  "push": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "test_file_commit": {...},
+  "suggestions_file_commit": {...},
+  "message": "Suggestions sauvegardées avec succès"
+}
+```
+
+### POST /api/v1/generate-complete ⭐
+**Endpoint principal** : Génération complète en une seule requête.
+
+**Request:**
+```json
+{
+  "java_code": "package com.example; public class UserService {}",
+  "test_package": "com.example.test",
+  "include_suggestions": true,
+  "include_mutation_checklist": true,
+  "save_to_git": false,
+  "git_branch": "feature/add-tests",
+  "git_push": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "analysis": {...},
+  "test_code": "...",
+  "test_class_name": "UserServiceTest",
+  "test_package": "com.example.test",
+  "suggestions": {...},
+  "mutation_checklist": {...},
+  "git_storage": {...},
+  "summary": {
+    "class_name": "UserService",
+    "methods_count": 5,
+    "public_methods_count": 4,
+    "test_generated": true,
+    "suggestions_count": 15,
+    "mutation_items_count": 20,
+    "saved_to_git": false
+  }
+}
+```
 

@@ -35,6 +35,21 @@ class MetricsServiceTest {
     private SmellDetector smellDetector;
 
     @Mock
+    private PMDSmellDetectorCli pmdSmellDetectorCli;
+
+    @Mock
+    private GitService gitService;
+
+    @Mock
+    private GlobalMetricsService globalMetricsService;
+
+    @Mock
+    private KafkaServiceInterface kafkaService;
+
+    @Mock
+    private FeastServiceInterface feastService;
+
+    @Mock
     private MultipartFile zipFile;
 
     private MetricsService metricsService;
@@ -46,7 +61,12 @@ class MetricsServiceTest {
                 javaParserExtractor,
                 ckMetricsExtractor,
                 dependencyGraphExtractor,
-                smellDetector
+                smellDetector,
+                pmdSmellDetectorCli,
+                gitService,
+                globalMetricsService,
+                kafkaService,
+                feastService
         );
     }
 

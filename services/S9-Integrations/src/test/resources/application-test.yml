@@ -1,0 +1,18 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.client.reactive.ReactiveOAuth2ClientAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.resource.reactive.ReactiveOAuth2ResourceServerAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+  security:
+    oauth2:
+      client:
+        registration:
+          enabled: false
+      resourceserver:
+        enabled: false
+    user:
+      name: test
+      password: test
+      roles: ADMIN
+

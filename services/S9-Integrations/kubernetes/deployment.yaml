@@ -1,0 +1,226 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cicd-integration-service
+  namespace: test-prioritization
+  labels:
+    app: cicd-integration-service
+    app.kubernetes.io/name: cicd-integration-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: test-prioritization-platform
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cicd-integration-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: cicd-integration-service
+        app.kubernetes.io/name: cicd-integration-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/api/actuator/prometheus"
+    spec:
+      serviceAccountName: cicd-integration-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+        - name: cicd-integration-service
+          image: test-prioritization/cicd-integration-service:1.0.0
+          imagePullPolicy: Always
+          
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+            
+            # Database configuration
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: db.host
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: db.port
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: db.name
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: db.username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: db.password
+            
+            # Redis configuration
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: redis.host
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: redis.port
+            
+            # Keycloak configuration
+            - name: KEYCLOAK_SERVER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: keycloak.server-url
+            - name: KEYCLOAK_REALM
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: keycloak.realm
+            - name: KEYCLOAK_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: keycloak.client-id
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: keycloak.client-secret
+            - name: KEYCLOAK_ISSUER_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: keycloak.issuer-uri
+            - name: KEYCLOAK_JWK_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: keycloak.jwk-uri
+            
+            # OpenTelemetry configuration
+            - name: OTEL_SERVICE_NAME
+              value: "cicd-integration-service"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: otel.endpoint
+            
+            # GitHub configuration
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: github.app-id
+            - name: GITHUB_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: github.private-key
+            - name: GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: github.webhook-secret
+            
+            # GitLab configuration
+            - name: GITLAB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: gitlab.token
+            - name: GITLAB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-integration-secrets
+                  key: gitlab.webhook-secret
+            
+            # Service URLs
+            - name: TRAINING_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: training.service-url
+            - name: PRIORITIZATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cicd-integration-config
+                  key: prioritization.service-url
+          
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: cicd-integration-service
+                topologyKey: kubernetes.io/hostname
+      
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: cicd-integration-service
+

@@ -10,6 +10,7 @@ from jinja2 import Environment, FileSystemLoader, Template
 from pathlib import Path
 from typing import Dict, List, Optional
 from src.models.ast_models import ClassAnalysis, MethodInfo, FieldInfo
+from src.services.mock_generator import MockGenerator
 
 
 class TestGenerator:
@@ -39,6 +40,7 @@ class TestGenerator:
             trim_blocks=True,
             lstrip_blocks=True
         )
+        self.mock_generator = MockGenerator()
     
     def generate_test_class(
         self,
@@ -76,7 +78,9 @@ class TestGenerator:
         # Préparer les méthodes de test
         test_methods = self._prepare_test_methods(
             class_analysis.methods,
-            class_instance_name
+            class_instance_name,
+            class_analysis,
+            mock_fields
         )
         
         # Préparer les imports nécessaires
@@ -95,6 +99,9 @@ class TestGenerator:
             for p in m.parameters
         )
         
+        # Générer les configurations de mocks pour le setup
+        mock_setup_lines = self._generate_mock_setup_lines(class_analysis, mock_fields)
+        
         # Générer le code
         generated_code = template.render(
             test_package=test_package,
@@ -104,7 +111,8 @@ class TestGenerator:
             mock_fields=mock_fields,
             test_methods=test_methods,
             test_imports=test_imports,
-            needs_collections=needs_collections
+            needs_collections=needs_collections,
+            mock_setup_lines=mock_setup_lines
         )
         
         return generated_code
@@ -133,7 +141,9 @@ class TestGenerator:
     def _prepare_test_methods(
         self,
         methods: List[MethodInfo],
-        class_instance_name: str
+        class_instance_name: str,
+        class_analysis: ClassAnalysis,
+        mock_fields: List[Dict]
     ) -> List[Dict]:
         """
         Prépare les méthodes de test à partir des méthodes publiques.
@@ -149,13 +159,21 @@ class TestGenerator:
         for method in methods:
             # Ne générer des tests que pour les méthodes publiques non-statiques
             if method.is_public and not method.is_static:
+                # Générer les configurations de mocks pour cette méthode
+                mock_config = self.mock_generator.generate_complete_mock_setup(
+                    class_analysis,
+                    method
+                )
+                
                 test_method = {
                     'name': method.name,
                     'display_name': f"devrait tester {method.name}",
                     'return_type': method.return_type or 'void',
                     'is_void': method.is_void,
                     'parameters': self._prepare_parameters(method.parameters),
-                    'throws_exceptions': method.throws_exceptions
+                    'throws_exceptions': method.throws_exceptions,
+                    'mock_setup_lines': mock_config.get('setup', []),
+                    'mock_verify_lines': mock_config.get('verify', [])
                 }
                 test_methods.append(test_method)
         return test_methods
@@ -280,6 +298,35 @@ class TestGenerator:
         """
         primitives = ['int', 'long', 'double', 'float', 'boolean', 'char', 'byte', 'short', 'void']
         return type_name in primitives
+    
+    def _generate_mock_setup_lines(
+        self,
+        class_analysis: ClassAnalysis,
+        mock_fields: List[Dict]
+    ) -> List[str]:
+        """
+        Génère les lignes de configuration des mocks pour le setup.
+        
+        Args:
+            class_analysis: Analyse de la classe
+            mock_fields: Liste des champs mockés
+        
+        Returns:
+            Liste de lignes de code Java pour le setup
+        """
+        setup_lines = []
+        
+        # Générer des configurations basiques pour les mocks
+        for mock_field in mock_fields:
+            if 'Repository' in mock_field['type']:
+                setup_lines.append(
+                    f"        // Configuration du mock {mock_field['name']}"
+                )
+                setup_lines.append(
+                    f"        // Exemple: when({mock_field['name']}.findById(any())).thenReturn(Optional.of(mockObject()));"
+                )
+        
+        return setup_lines
     
     def _to_camel_case(self, name: str) -> str:
         """

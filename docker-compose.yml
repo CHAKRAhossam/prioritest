@@ -1,7 +1,128 @@
 version: '3.8'
 
 services:
-  # Base de données
+  # ============================================
+  # CI/CD INFRASTRUCTURE
+  # ============================================
+
+  # SonarQube for Code Quality
+  sonarqube:
+    image: sonarqube:community
+    container_name: prioritest-sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+      - SONAR_JDBC_URL=jdbc:postgresql://postgres-sonar:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    depends_on:
+      postgres-sonar:
+        condition: service_healthy
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Jenkins for CI/CD
+  jenkins:
+    build:
+      context: ./infrastructure/jenkins
+      dockerfile: Dockerfile
+    container_name: prioritest-jenkins
+    user: root
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    environment:
+      - JENKINS_OPTS=--httpPort=8080
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker
+    depends_on:
+      - sonarqube
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ============================================
+  # INFRASTRUCTURE SERVICES
+  # ============================================
+
+  # Discovery Server (Eureka)
+  discovery-server:
+    build:
+      context: ./infrastructure/discovery-server
+      dockerfile: Dockerfile
+    container_name: prioritest-discovery-server
+    ports:
+      - "8761:8761"
+    environment:
+      SERVER_PORT: 8761
+      EUREKA_USER: eureka
+      EUREKA_PASSWORD: eureka123
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://eureka:eureka123@localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # API Gateway (Spring Cloud Gateway)
+  api-gateway:
+    build:
+      context: ./services/S0-ApiGateway
+      dockerfile: Dockerfile
+    container_name: prioritest-api-gateway
+    ports:
+      - "8090:8080"
+    environment:
+      SERVER_PORT: 8080
+      EUREKA_URI: http://discovery-server:8761/eureka/
+      EUREKA_USER: eureka
+      EUREKA_PASSWORD: eureka123
+      # Service URLs (for direct routing without Eureka)
+      S1_URL: http://collecte-depots:8001
+      S2_URL: http://analyse-statique:8081
+      S3_URL: http://historique-tests:8081
+      S4_URL: http://pretraitement-features:8000
+      S5_URL: http://ml-service:8001
+      S6_URL: http://moteur-priorisation:8006
+      S7_URL: http://test-scaffolder:8007
+      S9_URL: http://integrations:8009
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # DATA SERVICES
+  # ============================================
+
+  # Base de données (TimescaleDB pour PRIORITEST)
   postgres:
     image: timescale/timescaledb:latest-pg15
     container_name: prioritest-postgres
@@ -13,8 +134,30 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - prioritest-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prioritest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Base de données pour SonarQube
+  postgres-sonar:
+    image: postgres:15-alpine
+    container_name: prioritest-postgres-sonar
+    environment:
+      POSTGRES_DB: sonar
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_sonar_data:/var/lib/postgresql/data
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,10 +171,12 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9100:9000"
+      - "9101:9001"
     volumes:
       - minio_data:/data
+    networks:
+      - prioritest-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -40,35 +185,45 @@ services:
 
   # Kafka
   zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+    image: confluentinc/cp-zookeeper:7.4.0
     container_name: prioritest-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    networks:
+      - prioritest-network
 
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.4.0
     container_name: prioritest-kafka
     depends_on:
       - zookeeper
     ports:
       - "9092:9092"
+      - "9093:9093"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9093
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 30s
       timeout: 10s
       retries: 5
+    networks:
+      - prioritest-network
 
   # MLflow
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.8.1
+    build:
+      context: ./infrastructure/mlflow
+      dockerfile: Dockerfile
     container_name: prioritest-mlflow
     command: mlflow server --backend-store-uri postgresql://prioritest:prioritest@postgres:5432/prioritest --default-artifact-root s3://mlflow/artifacts --host 0.0.0.0 --port 5000
     ports:
@@ -80,11 +235,435 @@ services:
     depends_on:
       - postgres
       - minio
+    networks:
+      - prioritest-network
+
+  # Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: prioritest-kafka-ui
+    ports:
+      - "8083:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    depends_on:
+      - kafka
+      - zookeeper
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: prioritest-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service S9 - Integrations
+  integrations:
+    build:
+      context: ./services/S9-Integrations
+      dockerfile: Dockerfile
+    container_name: prioritest-integrations
+    ports:
+      - "8009:8080"
+    environment:
+      # Application
+      APP_NAME: Integrations
+      LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/prioritest
+      SPRING_DATASOURCE_USERNAME: prioritest
+      SPRING_DATASOURCE_PASSWORD: prioritest
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Server
+      SERVER_PORT: 8080
+    depends_on:
+      - postgres
+      - redis
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Service S1 - CollecteDepots
+  collecte-depots:
+    env_file:
+      - ./services/S1-CollecteDepots/.env
+    build:
+      context: ./services/S1-CollecteDepots
+      dockerfile: Dockerfile
+    container_name: prioritest-collecte-depots
+    ports:
+      - "8001:8001"
+    environment:
+      # Application
+      APP_NAME: CollecteDepots
+      LOG_LEVEL: INFO
+      ENVIRONMENT: production
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: collecte-depots
+      # Server
+      HOST: 0.0.0.0
+      PORT: 8001
+      # GitHub (optional - configure with tokens)
+      # GITHUB_TOKEN: ${GITHUB_TOKEN}
+      # GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      # GitLab (optional - configure with tokens)
+      # GITLAB_TOKEN: ${GITLAB_TOKEN}
+      # GITLAB_URL: https://gitlab.com
+      # GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET}
+      # Jira (optional - configure with credentials)
+      # JIRA_URL: ${JIRA_URL}
+      # JIRA_EMAIL: ${JIRA_EMAIL}
+      # JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_COMMITS: repository.commits
+      KAFKA_TOPIC_ISSUES: repository.issues
+      KAFKA_TOPIC_ARTIFACTS: ci.artifacts
+      # Database
+      DATABASE_URL: postgresql://prioritest:prioritest@postgres:5432/prioritest
+      DB_POOL_SIZE: 10
+      DB_MAX_OVERFLOW: 20
+      # MinIO
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_SECURE: "false"
+      MINIO_BUCKET_ARTIFACTS: ci-artifacts
+      MINIO_BUCKET_REPOS: repository-snapshots
+      # DVC
+      ENABLE_DVC: "true"
+      DVC_S3_ENDPOINT_URL: http://minio:9000
+      DVC_S3_ACCESS_KEY_ID: minioadmin
+      DVC_S3_SECRET_ACCESS_KEY: minioadmin
+      DVC_DATA_DIR: /app/data
+      # Git operations
+      GIT_TEMP_DIR: /app/temp-repos
+      GIT_CLONE_TIMEOUT: 300
+      # Feature flags
+      ENABLE_TIMESCALE: "true"
+    volumes:
+      - collecte_depots_temp:/app/temp-repos
+      - collecte_depots_data:/app/data
+    depends_on:
+      - kafka
+      - postgres
+      - minio
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S2 - AnalyseStatique
+  analyse-statique:
+    build:
+      context: ./services/S2-AnalyseStatique
+      dockerfile: Dockerfile
+    container_name: prioritest-analyse-statique
+    ports:
+      - "8081:8081"
+    environment:
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      # Database (optional - uncomment when needed)
+      # SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/prioritest
+      # SPRING_DATASOURCE_USERNAME: prioritest
+      # SPRING_DATASOURCE_PASSWORD: prioritest
+      # Kafka (optional - set to true when needed)
+      KAFKA_ENABLED: "true"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Feast (optional - set to true when needed)
+      FEAST_ENABLED: "false"
+      FEAST_URL: http://localhost:6566
+      # Git temp directory
+      GIT_TEMP_DIR: /app/temp-repos
+    volumes:
+      - analyse_statique_temp:/app/temp-repos
+    depends_on:
+      - kafka
+      - postgres
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S3 - HistoriqueTests
+  historique-tests:
+    build:
+      context: ./services/S3-HistoriqueTests
+      dockerfile: Dockerfile
+    container_name: prioritest-historique-tests
+    ports:
+      - "8082:8081"
+    environment:
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      # Application
+      APP_NAME: HistoriqueTests
+      LOG_LEVEL: INFO
+      # Database (TimescaleDB)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/prioritest
+      SPRING_DATASOURCE_USERNAME: prioritest
+      SPRING_DATASOURCE_PASSWORD: prioritest
+      # Kafka
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: historique-tests-group
+      KAFKA_TOPIC_ARTIFACTS: ci.artifacts
+      # MinIO
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: ci-artifacts
+      # Server
+      SERVER_PORT: 8081
+    depends_on:
+      - kafka
+      - postgres
+      - minio
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Service S4 - PretraitementFeatures
+  pretraitement-features:
+    build:
+      context: ./services/S4-PretraitementFeatures
+      dockerfile: Dockerfile
+    container_name: prioritest-pretraitement-features
+    ports:
+      - "8004:8000"
+    environment:
+      # Application
+      APP_NAME: PretraitementFeatures
+      LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: pretraitement-features
+      # Database (pour acceder a S3)
+      DATABASE_URL: postgresql://prioritest:prioritest@postgres:5432/prioritest
+      # Feast Feature Store
+      FEAST_REGISTRY_PATH: /app/feature_repo
+      FEAST_REPO_PATH: /app/feature_repo
+      # Kafka (pour consommer code.metrics de S2)
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_CODE_METRICS: code.metrics
+      # S3 API (pour recuperer metriques de tests)
+      S3_API_URL: http://historique-tests:8081
+      # Server
+      PORT: 8000
+    volumes:
+      - pretraitement_features_data:/app/data
+      - pretraitement_features_feature_repo:/app/feature_repo
+    depends_on:
+      - postgres
+      - kafka
+      - historique-tests
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S5 - MLService
+  ml-service:
+    build:
+      context: ./services/S5-MLService
+      dockerfile: Dockerfile
+    container_name: prioritest-ml-service
+    ports:
+      - "8005:8001"
+    environment:
+      # Application
+      APP_NAME: MLService
+      LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: ml-service
+      # S4 Service URL (for fetching features)
+      S4_PRETRAITEMENT_FEATURES_URL: http://pretraitement-features:8000
+      # S4 Data path (mounted volume)
+      DATA_PATH: /app/data
+      # Model storage
+      MODEL_PATH: /app/models
+      # MLflow (optional)
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ml_service_models:/app/models
+      - pretraitement_features_data:/app/data:ro
+    depends_on:
+      - pretraitement-features
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Service S6 - MoteurPriorisation
+  moteur-priorisation:
+    build:
+      context: ./services/S6-MoteurPriorisation
+      dockerfile: Dockerfile
+    container_name: prioritest-moteur-priorisation
+    ports:
+      - "8006:8006"
+    environment:
+      # Application
+      APP_NAME: MoteurPriorisation
+      LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: moteur-priorisation
+      # S5 ML Service
+      ML_SERVICE_URL: http://ml-service:8001
+      # Database
+      DATABASE_URL: postgresql://prioritest:prioritest@postgres:5432/prioritest
+      # S4 Data (for metrics)
+      S4_SERVICE_URL: http://pretraitement-features:8000
+    depends_on:
+      - ml-service
+      - postgres
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S7 - TestScaffolder
+  test-scaffolder:
+    build:
+      context: ./services/S7-TestScaffolder
+      dockerfile: Dockerfile
+    container_name: prioritest-test-scaffolder
+    ports:
+      - "8007:8007"
+    environment:
+      # Application
+      APP_NAME: TestScaffolder
+      LOG_LEVEL: INFO
+      # Eureka
+      EUREKA_URI: http://eureka:eureka123@discovery-server:8761/eureka/
+      HOSTNAME: test-scaffolder
+      # S6 Prioritization Service
+      PRIORITIZATION_SERVICE_URL: http://moteur-priorisation:8006
+      # S1 for code fetching
+      S1_SERVICE_URL: http://collecte-depots:8001
+      # Git repo (optional)
+      GIT_REPO_URL: ""
+    depends_on:
+      - moteur-priorisation
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service S8 - DashboardQualite (Frontend)
+  s8-dashboard-qualite:
+    build:
+      context: ./services/S8-DashboardQualite/test-priority-hub
+      dockerfile: Dockerfile
+      args:
+        # API Gateway URL - use localhost since browser makes requests from user's machine
+        # Note: Don't include /api in base URL as client.ts already adds it
+        VITE_API_URL: http://localhost:8090
+    container_name: prioritest-s8-dashboard-qualite
+    ports:
+      - "3000:8080"
+    depends_on:
+      - api-gateway
+      - discovery-server
+    networks:
+      - prioritest-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   postgres_data:
+  postgres_sonar_data:
   minio_data:
+  analyse_statique_temp:
+  collecte_depots_temp:
+  collecte_depots_data:
+  historique_tests_temp:
+  pretraitement_features_data:
+  pretraitement_features_feature_repo:
+  ml_service_models:
+  redis_data:
+  jenkins_data:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
 
 networks:
+  prioritest-network:
+    driver: bridge
   default:
     name: prioritest-network

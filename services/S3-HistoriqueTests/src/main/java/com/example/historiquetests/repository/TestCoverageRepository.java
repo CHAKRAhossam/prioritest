@@ -50,4 +50,17 @@ public interface TestCoverageRepository extends JpaRepository<TestCoverage, Long
     
     @Query("SELECT tc FROM TestCoverage tc WHERE tc.className = :className AND tc.repositoryId = :repositoryId ORDER BY tc.timestamp DESC LIMIT 1")
     Optional<TestCoverage> findLatestByClassNameAndRepositoryId(@Param("className") String className, @Param("repositoryId") String repositoryId);
+    
+    // Branch filtering methods
+    List<TestCoverage> findByRepositoryIdAndBranch(String repositoryId, String branch);
+    
+    List<TestCoverage> findByCommitShaAndBranch(String commitSha, String branch);
+    
+    List<TestCoverage> findByRepositoryIdAndBranchAndClassName(String repositoryId, String branch, String className);
+    
+    @Query("SELECT tc FROM TestCoverage tc WHERE tc.repositoryId = :repositoryId AND tc.branch = :branch ORDER BY tc.timestamp DESC")
+    List<TestCoverage> findCoverageHistoryByRepositoryAndBranch(@Param("repositoryId") String repositoryId, @Param("branch") String branch);
+    
+    @Query("SELECT tc FROM TestCoverage tc WHERE tc.className = :className AND tc.repositoryId = :repositoryId AND tc.branch = :branch ORDER BY tc.timestamp DESC")
+    List<TestCoverage> findCoverageHistoryByClassAndRepositoryAndBranch(@Param("className") String className, @Param("repositoryId") String repositoryId, @Param("branch") String branch);
 }
