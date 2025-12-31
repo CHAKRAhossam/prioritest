@@ -478,7 +478,7 @@ pipeline {
                                                         echo 'Checking Maven output for JaCoCo agent attachment...'
                                                         if [ -f /tmp/maven-jacoco-output.log ]; then
                                                             echo 'JaCoCo-related lines from Maven output:'
-                                                            grep -i "jacoco\|agent" /tmp/maven-jacoco-output.log 2>/dev/null | head -20 || echo 'No JaCoCo mentions found'
+                                                            grep -iE "jacoco|agent" /tmp/maven-jacoco-output.log 2>/dev/null | head -20 || echo 'No JaCoCo mentions found'
                                                         fi
                                                         
                                                         # Check if MAVEN_OPTS contains JaCoCo
@@ -684,7 +684,7 @@ pipeline {
                                             echo '❌ Test compilation failed with exit code: ' \${TEST_COMPILE_EXIT_CODE}
                                             echo '⚠️ Warning: Tests cannot be executed due to compilation errors'
                                             echo 'Compilation errors summary:'
-                                            grep -i "error\|cannot find symbol" /tmp/test-compile-output.log 2>/dev/null | head -20 || echo 'Could not extract error details'
+                                            grep -iE "error|cannot find symbol" /tmp/test-compile-output.log 2>/dev/null | head -20 || echo 'Could not extract error details'
                                             echo ''
                                             echo '⚠️ Build will continue but tests will be skipped'
                                             echo '⚠️ This indicates that test code needs to be fixed to match current source code'
@@ -953,11 +953,11 @@ pipeline {
                                         set -e
                                         
                                         # Check for Spring Boot configuration errors
-                                        if grep -i "Failed to bind properties\|Failed to load ApplicationContext\|APPLICATION FAILED TO START" /tmp/test-output.log 2>/dev/null; then
+                                        if grep -iE "Failed to bind properties|Failed to load ApplicationContext|APPLICATION FAILED TO START" /tmp/test-output.log 2>/dev/null; then
                                             echo '❌ Spring Boot configuration error detected!'
                                             echo '⚠️ Tests failed due to application configuration issues'
                                             echo 'Configuration errors found:'
-                                            grep -i "Failed to bind properties\|APPLICATION FAILED TO START\|Description:" /tmp/test-output.log | head -10 || echo 'Could not extract error details'
+                                            grep -iE "Failed to bind properties|APPLICATION FAILED TO START|Description:" /tmp/test-output.log | head -10 || echo 'Could not extract error details'
                                             echo ''
                                             echo '⚠️ This indicates a problem with application.properties or application.yml configuration'
                                             echo '⚠️ Please check your Spring Boot configuration files'
