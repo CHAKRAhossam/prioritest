@@ -29,11 +29,13 @@ La plateforme analyse automatiquement vos dépôts Git, génère des prédiction
 
 ## 🎥 Démo Vidéo
 
+
 <div align="center">
 
 ### 🎬 Vidéo de Démonstration Complète
 
-<div align="center">
+[![Vidéo de Démonstration PRIORITEST](https://img.shields.io/badge/▶️-Regarder_la_Démo-red?style=for-the-badge)](https://github.com/user-attachments/assets/cef283ff-4a4a-481f-b636-0f7a488049ec
+)
 
 [![Vidéo de Démonstration PRIORITEST](https://img.shields.io/badge/▶️-Regarder_la_Démo-red?style=for-the-badge&logo=youtube)](https://youtube.com/watch?v=VIDEO_ID)
 
