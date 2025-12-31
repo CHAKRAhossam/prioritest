@@ -92,229 +92,669 @@ pipeline {
         
         stage('Parallel Build & Test') {
             parallel {
-                stage('Java Services') {
+                // Java Services - Individual stages for each service
+                stage('S0-ApiGateway') {
                     steps {
-                        script {
-                            def javaServices = [
-                                'S0-ApiGateway',
-                                'S2-AnalyseStatique',
-                                'S3-HistoriqueTests',
-                                'S9-Integrations'
-                            ]
-                            javaServices.each { service ->
-                                dir("services/${service}") {
-                                    script {
-                                        try {
-                                            echo "Building ${service}..."
-                                            
-                                            // Use Maven directly (installed in Jenkins image)
-                                            // Try mvnw first if available, otherwise use system Maven
-                                            def mavenCmd = 'mvn'
-                                            if (fileExists('mvnw')) {
-                                                sh 'chmod +x mvnw || true'
-                                                mavenCmd = './mvnw'
-                                            }
-                                            
-                                            // Build and test (continue even if tests fail)
-                                            // First compile and test
+                        dir('services/S0-ApiGateway') {
+                            script {
+                                try {
+                                    echo "Building S0-ApiGateway..."
+                                    
+                                    // Use Maven directly (installed in Jenkins image)
+                                    // Try mvnw first if available, otherwise use system Maven
+                                    def mavenCmd = 'mvn'
+                                    if (fileExists('mvnw')) {
+                                        sh 'chmod +x mvnw || true'
+                                        mavenCmd = './mvnw'
+                                    }
+                                    
+                                    // Build and test (continue even if tests fail)
+                                    sh """
+                                        echo 'Running tests for S0-ApiGateway...'
+                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                        
+                                        # Check if tests actually ran
+                                        if [ -d target/surefire-reports ]; then
+                                            echo '✅ Surefire reports directory exists'
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                            echo "Found \${TEST_COUNT} test report files"
+                                            if [ \${TEST_COUNT} -eq 0 ]; then
+                                                echo '⚠️ Warning: No test reports found - tests may not have executed'
+                                            fi
+                                        else
+                                            echo '⚠️ Warning: target/surefire-reports directory not found'
+                                        fi
+                                    """
+                                    
+                                    // Force JaCoCo report generation even if tests failed
+                                    sh """
+                                        echo 'Checking JaCoCo execution data...'
+                                        if [ -f target/jacoco.exec ]; then
+                                            echo '✅ jacoco.exec found'
+                                            FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
+                                            echo "jacoco.exec size: \${FILE_SIZE} bytes"
+                                            if [ \${FILE_SIZE} -eq 0 ]; then
+                                                echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
+                                            fi
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        else
+                                            echo '⚠️ Warning: jacoco.exec not found, tests may not have run'
+                                            echo 'Attempting to generate report anyway...'
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        fi
+                                    """
+                                    
+                                    // Copy JaCoCo HTML reports to coverage directory for publishing
+                                    sh """
+                                        mkdir -p coverage || true
+                                        if [ -d target/site/jacoco ]; then
+                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                        fi
+                                    """
+                                    
+                                    // Verify JaCoCo XML report exists before SonarQube analysis
+                                    sh """
+                                        if [ -f target/site/jacoco/jacoco.xml ]; then
+                                            echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
+                                            cat target/site/jacoco/jacoco.xml | head -20 || echo 'Could not read XML report'
+                                        else
+                                            echo '⚠️ Warning: JaCoCo XML report not found at target/site/jacoco/jacoco.xml'
+                                            echo 'Attempting to regenerate...'
+                                            ${mavenCmd} jacoco:report || echo 'Failed to regenerate JaCoCo report'
+                                        fi
+                                    """
+                                    
+                                    // SonarQube analysis
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
                                             sh """
-                                                echo 'Running tests for ${service}...'
-                                                ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
-                                                
-                                                # Check if tests actually ran
-                                                if [ -d target/surefire-reports ]; then
-                                                    echo '✅ Surefire reports directory exists'
-                                                    TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
-                                                    echo "Found \${TEST_COUNT} test report files"
-                                                    if [ \${TEST_COUNT} -eq 0 ]; then
-                                                        echo '⚠️ Warning: No test reports found - tests may not have executed'
-                                                    fi
-                                                else
-                                                    echo '⚠️ Warning: target/surefire-reports directory not found'
-                                                fi
-                                            """
-                                            
-                                            // Force JaCoCo report generation even if tests failed
-                                            // The jacoco.exec file should exist even if tests failed
-                                            sh """
-                                                echo 'Checking JaCoCo execution data...'
-                                                if [ -f target/jacoco.exec ]; then
-                                                    echo '✅ jacoco.exec found'
-                                                    FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
-                                                    echo "jacoco.exec size: \${FILE_SIZE} bytes"
-                                                    if [ \${FILE_SIZE} -eq 0 ]; then
-                                                        echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
-                                                    fi
-                                                    ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
-                                                else
-                                                    echo '⚠️ Warning: jacoco.exec not found, tests may not have run'
-                                                    echo 'Attempting to generate report anyway...'
-                                                    ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
-                                                fi
-                                            """
-                                            
-                                            // Copy JaCoCo HTML reports to coverage directory for publishing
-                                            sh """
-                                                mkdir -p coverage || true
-                                                if [ -d target/site/jacoco ]; then
-                                                    cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
-                                                fi
-                                            """
-                                            
-                                            // Verify JaCoCo XML report exists before SonarQube analysis
-                                            sh """
+                                                # Verify XML report exists before analysis
                                                 if [ -f target/site/jacoco/jacoco.xml ]; then
-                                                    echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
-                                                    cat target/site/jacoco/jacoco.xml | head -20 || echo 'Could not read XML report'
+                                                    echo 'Proceeding with SonarQube analysis with coverage report'
                                                 else
-                                                    echo '⚠️ Warning: JaCoCo XML report not found at target/site/jacoco/jacoco.xml'
-                                                    echo 'Attempting to regenerate...'
-                                                    ${mavenCmd} jacoco:report || echo 'Failed to regenerate JaCoCo report'
+                                                    echo 'Warning: Proceeding without coverage report'
                                                 fi
+                                                # Run SonarQube analysis without qualitygate.wait to avoid build failure
+                                                # Quality Gate will be checked in a separate stage
+                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
                                             """
-                                            
-                                            // SonarQube analysis
-                                            if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
-                                                withSonarQubeEnv('SonarQube') {
-                                                    sh """
-                                                        # Verify XML report exists before analysis
-                                                        if [ -f target/site/jacoco/jacoco.xml ]; then
-                                                            echo 'Proceeding with SonarQube analysis with coverage report'
-                                                        else
-                                                            echo 'Warning: Proceeding without coverage report'
-                                                        fi
-                                                        # Run SonarQube analysis without qualitygate.wait to avoid build failure
-                                                        # Quality Gate will be checked in a separate stage
-                                                        ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
-                                                    """
-                                                }
-                                            } else {
-                                                echo "SonarQube token not configured, skipping analysis for ${service}"
-                                            }
-                                            
-                                            echo "✅ ${service} build completed"
-                                        } catch (Exception e) {
-                                            echo "❌ Error building ${service}: ${e.getMessage()}"
-                                            // Continue with other services
                                         }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S0-ApiGateway"
                                     }
+                                    
+                                    echo "✅ S0-ApiGateway build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S0-ApiGateway: ${e.getMessage()}"
                                 }
                             }
                         }
                     }
                 }
                 
-                stage('Python Services') {
+                stage('S2-AnalyseStatique') {
                     steps {
-                        script {
-                            def pythonServices = [
-                                'S1-CollecteDepots',
-                                'S4-PretraitementFeatures',
-                                'S5-MLService',
-                                'S6-MoteurPriorisation',
-                                'S7-TestScaffolder'
-                            ]
-                            pythonServices.each { service ->
-                                dir("services/${service}") {
-                                    script {
-                                        try {
-                                            echo "Building ${service}..."
-                                            
-                                            // Use Python3 directly (installed in Jenkins image)
-                                            // Load Rust environment for pydantic-core compilation
-                                            sh """
-                                                export CARGO_HOME=/root/.cargo
-                                                export RUSTUP_HOME=/root/.rustup
-                                                export PATH=\$CARGO_HOME/bin:\$PATH
-                                                if [ -f /root/.cargo/env ]; then
-                                                    . /root/.cargo/env
-                                                fi
-                                                python3 -m venv venv || echo 'venv creation failed'
-                                                . venv/bin/activate || echo 'venv activation failed'
-                                                pip install --upgrade pip || echo 'pip upgrade failed'
-                                                pip install -r requirements.txt || echo 'pip install failed'
-                                                pip install pytest pytest-cov coverage || echo 'pytest install failed'
-                                                pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
-                                                
-                                                # Ensure coverage.xml is generated even if tests failed
-                                                if [ -f .coverage ]; then
-                                                    echo 'Found .coverage file, generating XML report...'
-                                                    coverage xml || echo 'Coverage XML generation from .coverage failed'
-                                                else
-                                                    echo 'Warning: .coverage file not found'
-                                                fi
-                                                
-                                                # Also try to generate coverage.xml directly if it doesn't exist
-                                                if [ ! -f coverage.xml ]; then
-                                                    echo 'Warning: coverage.xml not found, attempting to generate...'
-                                                    coverage xml || echo 'Coverage XML not generated'
-                                                else
-                                                    echo '✅ coverage.xml found'
-                                                    # Verify it's not empty
-                                                    if [ -s coverage.xml ]; then
-                                                        echo '✅ coverage.xml is not empty'
-                                                        head -20 coverage.xml || echo 'Could not read coverage.xml'
-                                                    else
-                                                        echo '⚠️ Warning: coverage.xml is empty'
-                                                    fi
-                                                fi
-                                                
-                                                # Copy HTML coverage reports to coverage directory
-                                                mkdir -p coverage || true
-                                                if [ -d htmlcov ]; then
-                                                    cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
-                                                elif [ -d coverage ]; then
-                                                    # Coverage already in coverage/ directory
-                                                    echo 'Coverage reports already in coverage/'
-                                                fi
-                                            """
-                                            
-                                            // SonarQube analysis
-                                            if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
-                                                withSonarQubeEnv('SonarQube') {
-                                                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
-                                                        sh """
-                                                            export PATH=/opt/sonar-scanner/bin:\$PATH
-                                                            export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
-                                                            export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
-                                                            . venv/bin/activate
-                                                            
-                                                            # Verify coverage.xml exists before SonarQube analysis
-                                                            if [ -f coverage.xml ]; then
-                                                                echo '✅ coverage.xml found, proceeding with SonarQube analysis'
-                                                                ls -lh coverage.xml || echo 'Could not list coverage.xml'
-                                                            else
-                                                                echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
-                                                            fi
-                                                            
-                                                            # Run SonarQube analysis without qualitygate.wait to avoid build failure
-                                                            # Quality Gate will be checked in a separate stage
-                                                            /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings (Quality Gate will be checked separately)"
-                                                        """
-                                                    }
-                                                }
-                                            } else {
-                                                echo "SonarQube token not configured, skipping analysis for ${service}"
-                                            }
-                                            
-                                            echo "✅ ${service} build completed"
-                                        } catch (Exception e) {
-                                            echo "❌ Error building ${service}: ${e.getMessage()}"
-                                            // Continue with other services
-                                        }
+                        dir('services/S2-AnalyseStatique') {
+                            script {
+                                try {
+                                    echo "Building S2-AnalyseStatique..."
+                                    
+                                    def mavenCmd = 'mvn'
+                                    if (fileExists('mvnw')) {
+                                        sh 'chmod +x mvnw || true'
+                                        mavenCmd = './mvnw'
                                     }
+                                    
+                                    sh """
+                                        echo 'Running tests for S2-AnalyseStatique...'
+                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                        
+                                        if [ -d target/surefire-reports ]; then
+                                            echo '✅ Surefire reports directory exists'
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                            echo "Found \${TEST_COUNT} test report files"
+                                        fi
+                                    """
+                                    
+                                    sh """
+                                        if [ -f target/jacoco.exec ]; then
+                                            echo '✅ jacoco.exec found'
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        else
+                                            echo '⚠️ Warning: jacoco.exec not found'
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        fi
+                                    """
+                                    
+                                    sh """
+                                        mkdir -p coverage || true
+                                        if [ -d target/site/jacoco ]; then
+                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                        fi
+                                    """
+                                    
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            sh """
+                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
+                                            """
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S2-AnalyseStatique"
+                                    }
+                                    
+                                    echo "✅ S2-AnalyseStatique build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S2-AnalyseStatique: ${e.getMessage()}"
                                 }
                             }
                         }
                     }
                 }
                 
-                stage('Frontend') {
+                stage('S3-HistoriqueTests') {
+                    steps {
+                        dir('services/S3-HistoriqueTests') {
+                            script {
+                                try {
+                                    echo "Building S3-HistoriqueTests..."
+                                    
+                                    def mavenCmd = 'mvn'
+                                    if (fileExists('mvnw')) {
+                                        sh 'chmod +x mvnw || true'
+                                        mavenCmd = './mvnw'
+                                    }
+                                    
+                                    sh """
+                                        echo 'Running tests for S3-HistoriqueTests...'
+                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                        
+                                        if [ -d target/surefire-reports ]; then
+                                            echo '✅ Surefire reports directory exists'
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                            echo "Found \${TEST_COUNT} test report files"
+                                        fi
+                                    """
+                                    
+                                    sh """
+                                        if [ -f target/jacoco.exec ]; then
+                                            echo '✅ jacoco.exec found'
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        else
+                                            echo '⚠️ Warning: jacoco.exec not found'
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        fi
+                                    """
+                                    
+                                    sh """
+                                        mkdir -p coverage || true
+                                        if [ -d target/site/jacoco ]; then
+                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                        fi
+                                    """
+                                    
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            sh """
+                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
+                                            """
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S3-HistoriqueTests"
+                                    }
+                                    
+                                    echo "✅ S3-HistoriqueTests build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S3-HistoriqueTests: ${e.getMessage()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('S9-Integrations') {
+                    steps {
+                        dir('services/S9-Integrations') {
+                            script {
+                                try {
+                                    echo "Building S9-Integrations..."
+                                    
+                                    def mavenCmd = 'mvn'
+                                    if (fileExists('mvnw')) {
+                                        sh 'chmod +x mvnw || true'
+                                        mavenCmd = './mvnw'
+                                    }
+                                    
+                                    sh """
+                                        echo 'Running tests for S9-Integrations...'
+                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                        
+                                        if [ -d target/surefire-reports ]; then
+                                            echo '✅ Surefire reports directory exists'
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                            echo "Found \${TEST_COUNT} test report files"
+                                        fi
+                                    """
+                                    
+                                    sh """
+                                        if [ -f target/jacoco.exec ]; then
+                                            echo '✅ jacoco.exec found'
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        else
+                                            echo '⚠️ Warning: jacoco.exec not found'
+                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                        fi
+                                    """
+                                    
+                                    sh """
+                                        mkdir -p coverage || true
+                                        if [ -d target/site/jacoco ]; then
+                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                        fi
+                                    """
+                                    
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            sh """
+                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
+                                            """
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S9-Integrations"
+                                    }
+                                    
+                                    echo "✅ S9-Integrations build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S9-Integrations: ${e.getMessage()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Python Services - Individual stages for each service
+                stage('S1-CollecteDepots') {
+                    steps {
+                        dir('services/S1-CollecteDepots') {
+                            script {
+                                try {
+                                    echo "Building S1-CollecteDepots..."
+                                    
+                                    // Use Python3 directly (installed in Jenkins image)
+                                    // Load Rust environment for pydantic-core compilation
+                                    sh """
+                                        export CARGO_HOME=/root/.cargo
+                                        export RUSTUP_HOME=/root/.rustup
+                                        export PATH=\$CARGO_HOME/bin:\$PATH
+                                        if [ -f /root/.cargo/env ]; then
+                                            . /root/.cargo/env
+                                        fi
+                                        python3 -m venv venv || echo 'venv creation failed'
+                                        . venv/bin/activate || echo 'venv activation failed'
+                                        pip install --upgrade pip || echo 'pip upgrade failed'
+                                        pip install -r requirements.txt || echo 'pip install failed'
+                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        
+                                        # Ensure coverage.xml is generated even if tests failed
+                                        if [ -f .coverage ]; then
+                                            echo 'Found .coverage file, generating XML report...'
+                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
+                                        else
+                                            echo 'Warning: .coverage file not found'
+                                        fi
+                                        
+                                        # Also try to generate coverage.xml directly if it doesn't exist
+                                        if [ ! -f coverage.xml ]; then
+                                            echo 'Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo 'Coverage XML not generated'
+                                        else
+                                            echo '✅ coverage.xml found'
+                                            if [ -s coverage.xml ]; then
+                                                echo '✅ coverage.xml is not empty'
+                                                head -20 coverage.xml || echo 'Could not read coverage.xml'
+                                            else
+                                                echo '⚠️ Warning: coverage.xml is empty'
+                                            fi
+                                        fi
+                                        
+                                        # Copy HTML coverage reports to coverage directory
+                                        mkdir -p coverage || true
+                                        if [ -d htmlcov ]; then
+                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                        elif [ -d coverage ]; then
+                                            echo 'Coverage reports already in coverage/'
+                                        fi
+                                    """
+                                    
+                                    // SonarQube analysis
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    . venv/bin/activate
+                                                    
+                                                    # Verify coverage.xml exists before SonarQube analysis
+                                                    if [ -f coverage.xml ]; then
+                                                        echo '✅ coverage.xml found, proceeding with SonarQube analysis'
+                                                        ls -lh coverage.xml || echo 'Could not list coverage.xml'
+                                                    else
+                                                        echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                    fi
+                                                    
+                                                    # Run SonarQube analysis without qualitygate.wait to avoid build failure
+                                                    # Quality Gate will be checked in a separate stage
+                                                    /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings (Quality Gate will be checked separately)"
+                                                """
+                                            }
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S1-CollecteDepots"
+                                    }
+                                    
+                                    echo "✅ S1-CollecteDepots build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S1-CollecteDepots: ${e.getMessage()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('S4-PretraitementFeatures') {
+                    steps {
+                        dir('services/S4-PretraitementFeatures') {
+                            script {
+                                try {
+                                    echo "Building S4-PretraitementFeatures..."
+                                    
+                                    sh """
+                                        export CARGO_HOME=/root/.cargo
+                                        export RUSTUP_HOME=/root/.rustup
+                                        export PATH=\$CARGO_HOME/bin:\$PATH
+                                        if [ -f /root/.cargo/env ]; then
+                                            . /root/.cargo/env
+                                        fi
+                                        python3 -m venv venv || echo 'venv creation failed'
+                                        . venv/bin/activate || echo 'venv activation failed'
+                                        pip install --upgrade pip || echo 'pip upgrade failed'
+                                        pip install -r requirements.txt || echo 'pip install failed'
+                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        
+                                        if [ -f .coverage ]; then
+                                            echo 'Found .coverage file, generating XML report...'
+                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
+                                        fi
+                                        
+                                        if [ ! -f coverage.xml ]; then
+                                            echo 'Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo 'Coverage XML not generated'
+                                        else
+                                            echo '✅ coverage.xml found'
+                                        fi
+                                        
+                                        mkdir -p coverage || true
+                                        if [ -d htmlcov ]; then
+                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                        fi
+                                    """
+                                    
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    . venv/bin/activate
+                                                    
+                                                    if [ -f coverage.xml ]; then
+                                                        echo '✅ coverage.xml found, proceeding with SonarQube analysis'
+                                                    else
+                                                        echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                    fi
+                                                    
+                                                    /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings"
+                                                """
+                                            }
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S4-PretraitementFeatures"
+                                    }
+                                    
+                                    echo "✅ S4-PretraitementFeatures build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S4-PretraitementFeatures: ${e.getMessage()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('S5-MLService') {
+                    steps {
+                        dir('services/S5-MLService') {
+                            script {
+                                try {
+                                    echo "Building S5-MLService..."
+                                    
+                                    sh """
+                                        export CARGO_HOME=/root/.cargo
+                                        export RUSTUP_HOME=/root/.rustup
+                                        export PATH=\$CARGO_HOME/bin:\$PATH
+                                        if [ -f /root/.cargo/env ]; then
+                                            . /root/.cargo/env
+                                        fi
+                                        python3 -m venv venv || echo 'venv creation failed'
+                                        . venv/bin/activate || echo 'venv activation failed'
+                                        pip install --upgrade pip || echo 'pip upgrade failed'
+                                        pip install -r requirements.txt || echo 'pip install failed'
+                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        
+                                        if [ -f .coverage ]; then
+                                            echo 'Found .coverage file, generating XML report...'
+                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
+                                        fi
+                                        
+                                        if [ ! -f coverage.xml ]; then
+                                            echo 'Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo 'Coverage XML not generated'
+                                        else
+                                            echo '✅ coverage.xml found'
+                                        fi
+                                        
+                                        mkdir -p coverage || true
+                                        if [ -d htmlcov ]; then
+                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                        fi
+                                    """
+                                    
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    . venv/bin/activate
+                                                    
+                                                    if [ -f coverage.xml ]; then
+                                                        echo '✅ coverage.xml found, proceeding with SonarQube analysis'
+                                                    else
+                                                        echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                    fi
+                                                    
+                                                    /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings"
+                                                """
+                                            }
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S5-MLService"
+                                    }
+                                    
+                                    echo "✅ S5-MLService build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S5-MLService: ${e.getMessage()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('S6-MoteurPriorisation') {
+                    steps {
+                        dir('services/S6-MoteurPriorisation') {
+                            script {
+                                try {
+                                    echo "Building S6-MoteurPriorisation..."
+                                    
+                                    sh """
+                                        export CARGO_HOME=/root/.cargo
+                                        export RUSTUP_HOME=/root/.rustup
+                                        export PATH=\$CARGO_HOME/bin:\$PATH
+                                        if [ -f /root/.cargo/env ]; then
+                                            . /root/.cargo/env
+                                        fi
+                                        python3 -m venv venv || echo 'venv creation failed'
+                                        . venv/bin/activate || echo 'venv activation failed'
+                                        pip install --upgrade pip || echo 'pip upgrade failed'
+                                        pip install -r requirements.txt || echo 'pip install failed'
+                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        
+                                        if [ -f .coverage ]; then
+                                            echo 'Found .coverage file, generating XML report...'
+                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
+                                        fi
+                                        
+                                        if [ ! -f coverage.xml ]; then
+                                            echo 'Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo 'Coverage XML not generated'
+                                        else
+                                            echo '✅ coverage.xml found'
+                                        fi
+                                        
+                                        mkdir -p coverage || true
+                                        if [ -d htmlcov ]; then
+                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                        fi
+                                    """
+                                    
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    . venv/bin/activate
+                                                    
+                                                    if [ -f coverage.xml ]; then
+                                                        echo '✅ coverage.xml found, proceeding with SonarQube analysis'
+                                                    else
+                                                        echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                    fi
+                                                    
+                                                    /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings"
+                                                """
+                                            }
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S6-MoteurPriorisation"
+                                    }
+                                    
+                                    echo "✅ S6-MoteurPriorisation build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S6-MoteurPriorisation: ${e.getMessage()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('S7-TestScaffolder') {
+                    steps {
+                        dir('services/S7-TestScaffolder') {
+                            script {
+                                try {
+                                    echo "Building S7-TestScaffolder..."
+                                    
+                                    sh """
+                                        export CARGO_HOME=/root/.cargo
+                                        export RUSTUP_HOME=/root/.rustup
+                                        export PATH=\$CARGO_HOME/bin:\$PATH
+                                        if [ -f /root/.cargo/env ]; then
+                                            . /root/.cargo/env
+                                        fi
+                                        python3 -m venv venv || echo 'venv creation failed'
+                                        . venv/bin/activate || echo 'venv activation failed'
+                                        pip install --upgrade pip || echo 'pip upgrade failed'
+                                        pip install -r requirements.txt || echo 'pip install failed'
+                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        
+                                        if [ -f .coverage ]; then
+                                            echo 'Found .coverage file, generating XML report...'
+                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
+                                        fi
+                                        
+                                        if [ ! -f coverage.xml ]; then
+                                            echo 'Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo 'Coverage XML not generated'
+                                        else
+                                            echo '✅ coverage.xml found'
+                                        fi
+                                        
+                                        mkdir -p coverage || true
+                                        if [ -d htmlcov ]; then
+                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                        fi
+                                    """
+                                    
+                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                        withSonarQubeEnv('SonarQube') {
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    . venv/bin/activate
+                                                    
+                                                    if [ -f coverage.xml ]; then
+                                                        echo '✅ coverage.xml found, proceeding with SonarQube analysis'
+                                                    else
+                                                        echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                    fi
+                                                    
+                                                    /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings"
+                                                """
+                                            }
+                                        }
+                                    } else {
+                                        echo "SonarQube token not configured, skipping analysis for S7-TestScaffolder"
+                                    }
+                                    
+                                    echo "✅ S7-TestScaffolder build completed"
+                                } catch (Exception e) {
+                                    echo "❌ Error building S7-TestScaffolder: ${e.getMessage()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Frontend Service
+                stage('S8-DashboardQualite') {
                     steps {
                         dir('services/S8-DashboardQualite/test-priority-hub') {
                             script {
                                 try {
-                                    echo "Building frontend..."
+                                    echo "Building S8-DashboardQualite..."
                                     
                                     // Use npm directly (installed in Jenkins image)
                                     sh """
@@ -371,12 +811,12 @@ pipeline {
                                             }
                                         }
                                     } else {
-                                        echo "SonarQube token not configured, skipping analysis for frontend"
+                                        echo "SonarQube token not configured, skipping analysis for S8-DashboardQualite"
                                     }
                                     
-                                    echo "✅ Frontend build completed"
+                                    echo "✅ S8-DashboardQualite build completed"
                                 } catch (Exception e) {
-                                    echo "❌ Error building frontend: ${e.getMessage()}"
+                                    echo "❌ Error building S8-DashboardQualite: ${e.getMessage()}"
                                 }
                             }
                         }

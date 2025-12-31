@@ -18,11 +18,25 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     confusion_matrix, roc_auc_score
 )
-import shap
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Check SHAP availability
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    logger.warning("SHAP not available. Model explainability will be limited.")
+
+# Check SHAP availability
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
 
 
 def load_data(data_path: str) -> tuple:
@@ -78,7 +92,7 @@ def prepare_features(df: pd.DataFrame) -> tuple:
     return X, y, feature_names
 
 def train_xgboost(X_train, y_train) -> XGBClassifier:
-    """Train XGBoost classifier."""
+    """Train XGBoost classifier with class balancing."""
     logger.info("Training XGBoost model...")
     
     # Handle single class case
@@ -92,12 +106,25 @@ def train_xgboost(X_train, y_train) -> XGBClassifier:
         X_train = pd.concat([X_train.reset_index(drop=True), synthetic_X], ignore_index=True)
         y_train = pd.concat([y_train.reset_index(drop=True), synthetic_y], ignore_index=True)
     
+    # Calculate class weights for imbalance handling
+    from collections import Counter
+    class_counts = Counter(y_train)
+    total_samples = len(y_train)
+    scale_pos_weight = class_counts[0] / class_counts[1] if class_counts[1] > 0 else 1.0
+    
+    logger.info(f"Class distribution: {class_counts}")
+    logger.info(f"Using scale_pos_weight: {scale_pos_weight:.2f} for class imbalance")
+    
     model = XGBClassifier(
-        n_estimators=100,
+        n_estimators=200,  # Increased for better learning
         max_depth=6,
         learning_rate=0.1,
         random_state=42,
-        eval_metric='logloss'
+        eval_metric='logloss',
+        scale_pos_weight=scale_pos_weight,  # Handle class imbalance
+        min_child_weight=1,
+        subsample=0.8,
+        colsample_bytree=0.8
     )
     model.fit(X_train, y_train)
     logger.info("XGBoost training complete")
@@ -105,7 +132,7 @@ def train_xgboost(X_train, y_train) -> XGBClassifier:
 
 
 def train_lightgbm(X_train, y_train) -> LGBMClassifier:
-    """Train LightGBM classifier."""
+    """Train LightGBM classifier with class balancing."""
     logger.info("Training LightGBM model...")
     
     unique_classes = np.unique(y_train)
@@ -118,22 +145,43 @@ def train_lightgbm(X_train, y_train) -> LGBMClassifier:
         X_train = pd.concat([X_train.reset_index(drop=True), synthetic_X], ignore_index=True)
         y_train = pd.concat([y_train.reset_index(drop=True), synthetic_y], ignore_index=True)
     
+    # Calculate class weights for imbalance handling
+    from collections import Counter
+    class_counts = Counter(y_train)
+    total_samples = len(y_train)
+    
+    # Calculate class weights (inverse frequency)
+    class_weights = {}
+    for cls in unique_classes:
+        class_weights[cls] = total_samples / (len(unique_classes) * class_counts[cls])
+    
+    logger.info(f"Class distribution: {class_counts}")
+    logger.info(f"Using class weights: {class_weights}")
+    
     model = LGBMClassifier(
-        n_estimators=100,
+        n_estimators=200,  # Increased for better learning
         max_depth=6,
         learning_rate=0.1,
         random_state=42,
-        verbose=-1
+        verbose=-1,
+        class_weight='balanced',  # Handle class imbalance
+        min_child_samples=20,
+        subsample=0.8,
+        colsample_bytree=0.8
     )
     model.fit(X_train, y_train)
     logger.info("LightGBM training complete")
     return model
 
 
-def evaluate_model(model, X_test, y_test, model_name: str = "Model"):
-    """Evaluate model and print metrics."""
+def evaluate_model(model, X_test, y_test, model_name: str = "Model", save_plot: bool = True):
+    """Evaluate model and print metrics with optional visualization."""
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
+    
+    # Calculate confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    tn, fp, fn, tp = cm.ravel()
     
     print(f"\n{'='*50}")
     print(f"{model_name} Evaluation Results")
@@ -151,8 +199,65 @@ def evaluate_model(model, X_test, y_test, model_name: str = "Model"):
         print(f"Recall: {recall:.4f}")
         print(f"F1 Score: {f1:.4f}")
     
-    print(f"\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
+    print(f"\nConfusion Matrix (Counts):")
+    print(f"                Predicted")
+    print(f"              No Risk  Risk")
+    print(f"True No Risk    {tn:4d}    {fp:4d}")
+    print(f"     Risk       {fn:4d}    {tp:4d}")
+    
+    # Visualize if matplotlib available and save_plot is True
+    if save_plot:
+        try:
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            
+            fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+            
+            # Plot 1: Counts
+            sns.heatmap(
+                cm, 
+                annot=True, 
+                fmt='d', 
+                cmap='RdYlGn_r',
+                xticklabels=['No Risk (0)', 'Risk (1)'],
+                yticklabels=['No Risk (0)', 'Risk (1)'],
+                ax=axes[0],
+                cbar_kws={'label': 'Number of Classes'}
+            )
+            axes[0].set_title(f'{model_name} - Confusion Matrix', fontsize=12, fontweight='bold')
+            axes[0].set_ylabel('True Label', fontsize=11)
+            axes[0].set_xlabel('Predicted Label', fontsize=11)
+            
+            # Plot 2: Normalized
+            cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+            cm_norm = np.nan_to_num(cm_norm) * 100
+            sns.heatmap(
+                cm_norm,
+                annot=True,
+                fmt='.1f',
+                cmap='RdYlGn_r',
+                xticklabels=['No Risk (0)', 'Risk (1)'],
+                yticklabels=['No Risk (0)', 'Risk (1)'],
+                ax=axes[1],
+                cbar_kws={'label': 'Percentage (%)'}
+            )
+            axes[1].set_title(f'{model_name} - Normalized Confusion Matrix (%)', 
+                            fontsize=12, fontweight='bold')
+            axes[1].set_ylabel('True Label', fontsize=11)
+            axes[1].set_xlabel('Predicted Label', fontsize=11)
+            
+            plt.tight_layout()
+            
+            model_dir = os.environ.get("MODEL_PATH", "/app/models")
+            output_path = os.path.join(model_dir, f"{model_name.lower().replace(' ', '_')}_confusion_matrix.png")
+            plt.savefig(output_path, dpi=300, bbox_inches='tight')
+            logger.info(f"Confusion matrix plot saved to: {output_path}")
+            plt.close()
+        except ImportError:
+            logger.warning("Matplotlib/Seaborn not available. Skipping visualization.")
+        except Exception as e:
+            logger.warning(f"Could not create visualization: {e}")
+    
     print(f"{'='*50}")
     
     return accuracy
@@ -160,6 +265,10 @@ def evaluate_model(model, X_test, y_test, model_name: str = "Model"):
 
 def compute_shap_values(model, X_sample, feature_names: list):
     """Compute SHAP values for model explainability."""
+    if not SHAP_AVAILABLE:
+        logger.warning("SHAP not available. Skipping SHAP computation.")
+        return None, None
+    
     logger.info("Computing SHAP values...")
     try:
         explainer = shap.TreeExplainer(model)
@@ -240,10 +349,10 @@ def main():
     # Select best model
     if xgb_accuracy >= lgb_accuracy:
         best_model = xgb_model
-        print(f"\n✅ XGBoost selected as best model (accuracy: {xgb_accuracy:.4f})")
+        print(f"\n[OK] XGBoost selected as best model (accuracy: {xgb_accuracy:.4f})")
     else:
         best_model = lgb_model
-        print(f"\n✅ LightGBM selected as best model (accuracy: {lgb_accuracy:.4f})")
+        print(f"\n[OK] LightGBM selected as best model (accuracy: {lgb_accuracy:.4f})")
     
     # Compute SHAP values
     X_sample = X_test.head(100) if len(X_test) > 100 else X_test

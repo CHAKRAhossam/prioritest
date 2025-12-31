@@ -37,9 +37,17 @@ La plateforme analyse automatiquement vos dépôts Git, génère des prédiction
 [![Vidéo de Démonstration PRIORITEST](https://img.shields.io/badge/▶️-Regarder_la_Démo-red?style=for-the-badge)](https://github.com/user-attachments/assets/cef283ff-4a4a-481f-b636-0f7a488049ec
 )
 
-*Cliquez sur l'image ci-dessus pour regarder la démonstration complète de la plateforme*
+[![Vidéo de Démonstration PRIORITEST](https://img.shields.io/badge/▶️-Regarder_la_Démo-red?style=for-the-badge&logo=youtube)](https://youtube.com/watch?v=VIDEO_ID)
 
-**Durée :** ~15 minutes | **Langue :** Français
+📹 **Vidéo de démonstration disponible sur YouTube**
+
+*Cliquez sur le badge ci-dessus pour regarder la démonstration complète*
+
+**Langue :** Français | **Durée :** ~15 minutes
+
+> 💡 **Note :** Pour ajouter la vidéo, uploader `docs/DEMO.mp4` sur YouTube et remplacer `VIDEO_ID` ci-dessus par l'ID de votre vidéo YouTube.
+
+</div>
 
 **Contenu de la démo :**
 - 🚀 Démarrage et configuration
@@ -48,6 +56,8 @@ La plateforme analyse automatiquement vos dépôts Git, génère des prédiction
 - 📊 Visualisation des résultats de priorisation
 - 🎯 Utilisation des différentes stratégies de priorisation
 - 📈 Analyse des métriques et rapports
+
+> 💡 **Note :** Si la vidéo ne s'affiche pas directement, vous pouvez [la télécharger ici](docs/DEMO.mp4)
 
 </div>
 
