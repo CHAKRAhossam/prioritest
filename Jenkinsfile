@@ -96,20 +96,20 @@ pipeline {
                 stage('S0-ApiGateway') {
                     steps {
                         dir('services/S0-ApiGateway') {
-                            script {
-                                try {
+                                    script {
+                                        try {
                                     echo "Building S0-ApiGateway..."
-                                    
-                                    // Use Maven directly (installed in Jenkins image)
-                                    // Try mvnw first if available, otherwise use system Maven
-                                    def mavenCmd = 'mvn'
-                                    if (fileExists('mvnw')) {
-                                        sh 'chmod +x mvnw || true'
-                                        mavenCmd = './mvnw'
-                                    }
-                                    
+                                            
+                                            // Use Maven directly (installed in Jenkins image)
+                                            // Try mvnw first if available, otherwise use system Maven
+                                            def mavenCmd = 'mvn'
+                                            if (fileExists('mvnw')) {
+                                                sh 'chmod +x mvnw || true'
+                                                mavenCmd = './mvnw'
+                                            }
+                                            
                                     // Verify Maven works first
-                                    sh """
+                                            sh """
                                         echo 'Verifying Maven installation...'
                                         ${mavenCmd} --version || { echo '❌ Maven command failed'; exit 1; }
                                     """
@@ -128,23 +128,143 @@ pipeline {
                                         ${mavenCmd} test -Dmaven.test.failure.ignore=true
                                         TEST_EXIT_CODE=\$?
                                         set -e
-                                        
-                                        # Check if tests actually ran
-                                        if [ -d target/surefire-reports ]; then
-                                            echo '✅ Surefire reports directory exists'
+                                                
+                                                # Check if tests actually ran
+                                                if [ -d target/surefire-reports ]; then
+                                                    echo '✅ Surefire reports directory exists'
                                             TEST_COUNT=\$(find target/surefire-reports -name '*.xml' 2>/dev/null | wc -l)
-                                            echo "Found \${TEST_COUNT} test report files"
-                                            if [ \${TEST_COUNT} -eq 0 ]; then
-                                                echo '⚠️ Warning: No test reports found - tests may not have executed'
+                                                    echo "Found \${TEST_COUNT} test report files"
+                                                    if [ \${TEST_COUNT} -eq 0 ]; then
+                                                        echo '⚠️ Warning: No test reports found - tests may not have executed'
                                                 # Check if there are test classes
                                                 if [ -d src/test ]; then
                                                     echo '⚠️ Test source directory exists but no reports generated'
                                                 fi
-                                            fi
-                                        else
-                                            echo '⚠️ Warning: target/surefire-reports directory not found'
+                                                    fi
+                                                else
+                                                    echo '⚠️ Warning: target/surefire-reports directory not found'
                                             # Try to create it and check if tests were skipped
                                             ${mavenCmd} surefire:test -DskipTests=false 2>&1 | tail -20 || true
+                                        fi
+                                        
+                                        if [ \${TEST_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ Tests completed with exit code: ' \${TEST_EXIT_CODE}
+                                                fi
+                                            """
+                                            
+                                            // Force JaCoCo report generation even if tests failed
+                                            sh """
+                                                echo 'Checking JaCoCo execution data...'
+                                                if [ -f target/jacoco.exec ]; then
+                                                    echo '✅ jacoco.exec found'
+                                                    FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
+                                                    echo "jacoco.exec size: \${FILE_SIZE} bytes"
+                                                    if [ \${FILE_SIZE} -eq 0 ]; then
+                                                        echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
+                                                    fi
+                                                else
+                                                    echo '⚠️ Warning: jacoco.exec not found, tests may not have run'
+                                                fi
+                                        
+                                        echo 'Generating JaCoCo report...'
+                                        ${mavenCmd} jacoco:report || echo '⚠️ JaCoCo report generation failed or skipped'
+                                            """
+                                            
+                                            // Copy JaCoCo HTML reports to coverage directory for publishing
+                                            sh """
+                                                mkdir -p coverage || true
+                                                if [ -d target/site/jacoco ]; then
+                                            cp -r target/site/jacoco/* coverage/ || echo '⚠️ JaCoCo HTML report copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: target/site/jacoco directory not found'
+                                                fi
+                                            """
+                                            
+                                            // Verify JaCoCo XML report exists before SonarQube analysis
+                                            sh """
+                                                if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                    echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
+                                                else
+                                                    echo '⚠️ Warning: JaCoCo XML report not found at target/site/jacoco/jacoco.xml'
+                                                    echo 'Attempting to regenerate...'
+                                            ${mavenCmd} jacoco:report || echo '⚠️ Failed to regenerate JaCoCo report'
+                                            if [ ! -f target/site/jacoco/jacoco.xml ]; then
+                                                echo '⚠️ Warning: Proceeding without coverage report'
+                                            fi
+                                                fi
+                                            """
+                                            
+                                            // SonarQube analysis
+                                            if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                                withSonarQubeEnv('SonarQube') {
+                                                    sh """
+                                                        # Verify XML report exists before analysis
+                                                        if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
+                                                        else
+                                                    echo '⚠️ Warning: Proceeding without coverage report'
+                                                        fi
+                                                        # Run SonarQube analysis without qualitygate.wait to avoid build failure
+                                                        # Quality Gate will be checked in a separate stage
+                                                        ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
+                                                    """
+                                                }
+                                            } else {
+                                        echo "SonarQube token not configured, skipping analysis for S0-ApiGateway"
+                                            }
+                                            
+                                    echo "✅ S0-ApiGateway build completed"
+                                        } catch (Exception e) {
+                                    echo "❌ Error building S0-ApiGateway: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                
+                stage('S2-AnalyseStatique') {
+                    steps {
+                        dir('services/S2-AnalyseStatique') {
+                            script {
+                                try {
+                                    echo "Building S2-AnalyseStatique..."
+                                    
+                                    def mavenCmd = 'mvn'
+                                    if (fileExists('mvnw')) {
+                                        sh 'chmod +x mvnw || true'
+                                        mavenCmd = './mvnw'
+                                    }
+                                    
+                                    // Verify Maven works first
+                                    sh """
+                                        echo 'Verifying Maven installation...'
+                                        ${mavenCmd} --version || { echo '❌ Maven command failed'; exit 1; }
+                                    """
+                                    
+                                    // Compile first to catch compilation errors
+                                    sh """
+                                        echo 'Compiling S2-AnalyseStatique...'
+                                        ${mavenCmd} clean compile || { echo '❌ Compilation failed'; exit 1; }
+                                        echo '✅ Compilation successful'
+                                    """
+                                    
+                                    // Run tests with JaCoCo agent attached
+                                    sh """
+                                        echo 'Running tests for S2-AnalyseStatique with JaCoCo...'
+                                        set +e
+                                        # Prepare JaCoCo agent and run tests
+                                        ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ -d target/surefire-reports ]; then
+                                            echo '✅ Surefire reports directory exists'
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' 2>/dev/null | wc -l)
+                                            echo "Found \${TEST_COUNT} test report files"
+                                        else
+                                            echo '⚠️ Warning: target/surefire-reports directory not found'
                                         fi
                                         
                                         if [ \${TEST_EXIT_CODE} -ne 0 ]; then
@@ -152,7 +272,7 @@ pipeline {
                                         fi
                                     """
                                     
-                                    // Force JaCoCo report generation even if tests failed
+                                    // Check for JaCoCo execution data and generate report
                                     sh """
                                         echo 'Checking JaCoCo execution data...'
                                         if [ -f target/jacoco.exec ]; then
@@ -163,7 +283,10 @@ pipeline {
                                                 echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
                                             fi
                                         else
-                                            echo '⚠️ Warning: jacoco.exec not found, tests may not have run'
+                                            echo '⚠️ Warning: jacoco.exec not found after tests'
+                                            echo 'Attempting to run tests again with explicit JaCoCo agent...'
+                                            # Try running with explicit JaCoCo agent preparation
+                                            ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true || echo '⚠️ Failed to run tests with JaCoCo'
                                         fi
                                         
                                         echo 'Generating JaCoCo report...'
@@ -186,88 +309,20 @@ pipeline {
                                         if [ -f target/site/jacoco/jacoco.xml ]; then
                                             echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
                                         else
-                                            echo '⚠️ Warning: JaCoCo XML report not found at target/site/jacoco/jacoco.xml'
+                                            echo '⚠️ Warning: JaCoCo XML report not found'
                                             echo 'Attempting to regenerate...'
                                             ${mavenCmd} jacoco:report || echo '⚠️ Failed to regenerate JaCoCo report'
-                                            if [ ! -f target/site/jacoco/jacoco.xml ]; then
-                                                echo '⚠️ Warning: Proceeding without coverage report'
-                                            fi
                                         fi
                                     """
                                     
-                                    // SonarQube analysis
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
                                             sh """
-                                                # Verify XML report exists before analysis
                                                 if [ -f target/site/jacoco/jacoco.xml ]; then
                                                     echo '✅ Proceeding with SonarQube analysis with coverage report'
                                                 else
                                                     echo '⚠️ Warning: Proceeding without coverage report'
                                                 fi
-                                                # Run SonarQube analysis without qualitygate.wait to avoid build failure
-                                                # Quality Gate will be checked in a separate stage
-                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
-                                            """
-                                        }
-                                    } else {
-                                        echo "SonarQube token not configured, skipping analysis for S0-ApiGateway"
-                                    }
-                                    
-                                    echo "✅ S0-ApiGateway build completed"
-                                } catch (Exception e) {
-                                    echo "❌ Error building S0-ApiGateway: ${e.getMessage()}"
-                                    currentBuild.result = 'UNSTABLE'
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                stage('S2-AnalyseStatique') {
-                    steps {
-                        dir('services/S2-AnalyseStatique') {
-                            script {
-                                try {
-                                    echo "Building S2-AnalyseStatique..."
-                                    
-                                    def mavenCmd = 'mvn'
-                                    if (fileExists('mvnw')) {
-                                        sh 'chmod +x mvnw || true'
-                                        mavenCmd = './mvnw'
-                                    }
-                                    
-                                    sh """
-                                        echo 'Running tests for S2-AnalyseStatique...'
-                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
-                                        
-                                        if [ -d target/surefire-reports ]; then
-                                            echo '✅ Surefire reports directory exists'
-                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
-                                            echo "Found \${TEST_COUNT} test report files"
-                                        fi
-                                    """
-                                    
-                                    sh """
-                                        if [ -f target/jacoco.exec ]; then
-                                            echo '✅ jacoco.exec found'
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
-                                        else
-                                            echo '⚠️ Warning: jacoco.exec not found'
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
-                                        fi
-                                    """
-                                    
-                                    sh """
-                                        mkdir -p coverage || true
-                                        if [ -d target/site/jacoco ]; then
-                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
-                                        fi
-                                    """
-                                    
-                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
-                                        withSonarQubeEnv('SonarQube') {
-                                            sh """
                                                 ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
                                             """
                                         }
@@ -278,6 +333,7 @@ pipeline {
                                     echo "✅ S2-AnalyseStatique build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S2-AnalyseStatique: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
@@ -287,7 +343,7 @@ pipeline {
                 stage('S3-HistoriqueTests') {
                     steps {
                         dir('services/S3-HistoriqueTests') {
-                            script {
+                        script {
                                 try {
                                     echo "Building S3-HistoriqueTests..."
                                     
@@ -297,37 +353,125 @@ pipeline {
                                         mavenCmd = './mvnw'
                                     }
                                     
+                                    // Verify Maven works first
                                     sh """
-                                        echo 'Running tests for S3-HistoriqueTests...'
-                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                        echo 'Verifying Maven installation...'
+                                        ${mavenCmd} --version || { echo '❌ Maven command failed'; exit 1; }
+                                    """
+                                    
+                                    // Clean corrupted Maven repository POMs
+                                    sh """
+                                        echo 'Cleaning corrupted Maven repository POMs...'
+                                        M2_REPO=\${HOME}/.m2/repository
+                                        if [ -d \${M2_REPO} ]; then
+                                            echo 'Removing corrupted BOM POMs...'
+                                            # Remove corrupted BOM POMs that are empty or contain no data
+                                            find \${M2_REPO} -name '*.pom' -type f -size 0 -delete 2>/dev/null || true
+                                            # Remove specific corrupted BOM directories
+                                            rm -rf \${M2_REPO}/io/github/resilience4j/resilience4j-bom/2.0.2 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/github/openfeign/feign-bom/12.4 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/fabric8/kubernetes-client-bom/6.2.0 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/assertj/assertj-bom/3.24.2 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/zipkin/brave/brave-bom/5.15.1 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/com/datastax/oss/java-driver-bom/4.15.0 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/dropwizard/metrics/metrics-bom/4.2.19 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/glassfish/jaxb/jaxb-bom/4.0.3 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/apache/groovy/groovy-bom/4.0.15 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/infinispan/infinispan-bom/14.0.17.Final 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/com/fasterxml/jackson/jackson-parent/2.15 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/glassfish/jersey/jersey-bom/3.1.3 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/eclipse/jetty/jetty-bom/11.0.16 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/jetbrains/kotlin/kotlin-bom/1.8.22 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/jetbrains/kotlinx/kotlinx-coroutines-bom/1.6.4 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/apache/logging/log4j/log4j-bom/2.20.0 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/micrometer/micrometer-bom/1.11.4 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/micrometer/micrometer-tracing-bom/1.1.5 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/projectreactor/reactor-bom/2022.0.11 2>/dev/null || true
+                                            echo '✅ Corrupted POMs cleaned'
+                                        fi
+                                    """
+                                    
+                                    // Compile first to catch compilation errors and force dependency download
+                                    sh """
+                                        echo 'Compiling S3-HistoriqueTests and downloading dependencies...'
+                                        # Force update of dependencies (-U flag) to re-download corrupted POMs
+                                        ${mavenCmd} clean compile -U || { echo '❌ Compilation failed'; exit 1; }
+                                        echo '✅ Compilation successful'
+                                    """
+                                    
+                                    // Run tests with JaCoCo agent attached
+                                    sh """
+                                        echo 'Running tests for S3-HistoriqueTests with JaCoCo...'
+                                        set +e
+                                        # Prepare JaCoCo agent and run tests
+                                        ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
                                         
                                         if [ -d target/surefire-reports ]; then
                                             echo '✅ Surefire reports directory exists'
-                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' 2>/dev/null | wc -l)
                                             echo "Found \${TEST_COUNT} test report files"
+                                        else
+                                            echo '⚠️ Warning: target/surefire-reports directory not found'
+                                        fi
+                                        
+                                        if [ \${TEST_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ Tests completed with exit code: ' \${TEST_EXIT_CODE}
                                         fi
                                     """
                                     
+                                    // Check for JaCoCo execution data and generate report
                                     sh """
+                                        echo 'Checking JaCoCo execution data...'
                                         if [ -f target/jacoco.exec ]; then
                                             echo '✅ jacoco.exec found'
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                            FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
+                                            echo "jacoco.exec size: \${FILE_SIZE} bytes"
+                                            if [ \${FILE_SIZE} -eq 0 ]; then
+                                                echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
+                                            fi
                                         else
-                                            echo '⚠️ Warning: jacoco.exec not found'
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                            echo '⚠️ Warning: jacoco.exec not found after tests'
+                                            echo 'Attempting to run tests again with explicit JaCoCo agent...'
+                                            # Try running with explicit JaCoCo agent preparation
+                                            ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true || echo '⚠️ Failed to run tests with JaCoCo'
                                         fi
+                                        
+                                        echo 'Generating JaCoCo report...'
+                                        ${mavenCmd} jacoco:report || echo '⚠️ JaCoCo report generation failed or skipped'
                                     """
                                     
+                                    // Copy JaCoCo HTML reports to coverage directory for publishing
                                     sh """
                                         mkdir -p coverage || true
                                         if [ -d target/site/jacoco ]; then
-                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                            cp -r target/site/jacoco/* coverage/ || echo '⚠️ JaCoCo HTML report copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: target/site/jacoco directory not found'
+                                        fi
+                                    """
+                                    
+                                    // Verify JaCoCo XML report exists before SonarQube analysis
+                                    sh """
+                                        if [ -f target/site/jacoco/jacoco.xml ]; then
+                                            echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
+                                        else
+                                            echo '⚠️ Warning: JaCoCo XML report not found'
+                                            echo 'Attempting to regenerate...'
+                                            ${mavenCmd} jacoco:report || echo '⚠️ Failed to regenerate JaCoCo report'
                                         fi
                                     """
                                     
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
                                             sh """
+                                                if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
+                                                else
+                                                    echo '⚠️ Warning: Proceeding without coverage report'
+                                                fi
                                                 ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
                                             """
                                         }
@@ -338,6 +482,7 @@ pipeline {
                                     echo "✅ S3-HistoriqueTests build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S3-HistoriqueTests: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
@@ -357,37 +502,127 @@ pipeline {
                                         mavenCmd = './mvnw'
                                     }
                                     
+                                    // Verify Maven works first
                                     sh """
-                                        echo 'Running tests for S9-Integrations...'
-                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                        echo 'Verifying Maven installation...'
+                                        ${mavenCmd} --version || { echo '❌ Maven command failed'; exit 1; }
+                                    """
+                                    
+                                    // Clean corrupted Maven repository POMs (S9-Integrations specific versions)
+                                    sh """
+                                        echo 'Cleaning corrupted Maven repository POMs...'
+                                        M2_REPO=\${HOME}/.m2/repository
+                                        if [ -d \${M2_REPO} ]; then
+                                            echo 'Removing corrupted BOM POMs...'
+                                            # Remove corrupted BOM POMs that are empty or contain no data
+                                            find \${M2_REPO} -name '*.pom' -type f -size 0 -delete 2>/dev/null || true
+                                            # Remove specific corrupted BOM directories for S9-Integrations
+                                            rm -rf \${M2_REPO}/io/github/resilience4j/resilience4j-bom/2.1.0 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/github/openfeign/feign-bom/13.1 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/fabric8/kubernetes-client-bom/6.9.2 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/assertj/assertj-bom/3.24.2 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/zipkin/brave/brave-bom/5.16.0 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/com/datastax/oss/java-driver-bom/4.17.0 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/dropwizard/metrics/metrics-bom/4.2.23 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/glassfish/jaxb/jaxb-bom/4.0.4 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/apache/groovy/groovy-bom/4.0.16 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/infinispan/infinispan-bom/14.0.21.Final 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/com/fasterxml/jackson/jackson-parent/2.15 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/glassfish/jersey/jersey-bom/3.1.5 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/eclipse/jetty/ee10/jetty-ee10-bom/12.0.5 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/eclipse/jetty/jetty-bom/12.0.5 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/jetbrains/kotlin/kotlin-bom/1.9.21 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/jetbrains/kotlinx/kotlinx-coroutines-bom/1.7.3 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/jetbrains/kotlinx/kotlinx-serialization-bom/1.6.2 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/org/apache/logging/log4j/log4j-bom/2.21.1 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/micrometer/micrometer-bom/1.12.1 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/micrometer/micrometer-tracing-bom/1.2.1 2>/dev/null || true
+                                            rm -rf \${M2_REPO}/io/projectreactor/reactor-bom/2023.0.1 2>/dev/null || true
+                                            echo '✅ Corrupted POMs cleaned'
+                                        fi
+                                    """
+                                    
+                                    // Compile first to catch compilation errors and force dependency download
+                                    sh """
+                                        echo 'Compiling S9-Integrations and downloading dependencies...'
+                                        # Force update of dependencies (-U flag) to re-download corrupted POMs
+                                        ${mavenCmd} clean compile -U || { echo '❌ Compilation failed'; exit 1; }
+                                        echo '✅ Compilation successful'
+                                    """
+                                    
+                                    // Run tests with JaCoCo agent attached
+                                    sh """
+                                        echo 'Running tests for S9-Integrations with JaCoCo...'
+                                        set +e
+                                        # Prepare JaCoCo agent and run tests
+                                        ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
                                         
                                         if [ -d target/surefire-reports ]; then
                                             echo '✅ Surefire reports directory exists'
-                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' 2>/dev/null | wc -l)
                                             echo "Found \${TEST_COUNT} test report files"
+                                        else
+                                            echo '⚠️ Warning: target/surefire-reports directory not found'
+                                        fi
+                                        
+                                        if [ \${TEST_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ Tests completed with exit code: ' \${TEST_EXIT_CODE}
                                         fi
                                     """
                                     
+                                    // Check for JaCoCo execution data and generate report
                                     sh """
+                                        echo 'Checking JaCoCo execution data...'
                                         if [ -f target/jacoco.exec ]; then
                                             echo '✅ jacoco.exec found'
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                            FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
+                                            echo "jacoco.exec size: \${FILE_SIZE} bytes"
+                                            if [ \${FILE_SIZE} -eq 0 ]; then
+                                                echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
+                                            fi
                                         else
-                                            echo '⚠️ Warning: jacoco.exec not found'
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
+                                            echo '⚠️ Warning: jacoco.exec not found after tests'
+                                            echo 'Attempting to run tests again with explicit JaCoCo agent...'
+                                            # Try running with explicit JaCoCo agent preparation
+                                            ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true || echo '⚠️ Failed to run tests with JaCoCo'
                                         fi
+                                        
+                                        echo 'Generating JaCoCo report...'
+                                        ${mavenCmd} jacoco:report || echo '⚠️ JaCoCo report generation failed or skipped'
                                     """
                                     
+                                    // Copy JaCoCo HTML reports to coverage directory for publishing
                                     sh """
                                         mkdir -p coverage || true
                                         if [ -d target/site/jacoco ]; then
-                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                            cp -r target/site/jacoco/* coverage/ || echo '⚠️ JaCoCo HTML report copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: target/site/jacoco directory not found'
+                                        fi
+                                    """
+                                    
+                                    // Verify JaCoCo XML report exists before SonarQube analysis
+                                    sh """
+                                        if [ -f target/site/jacoco/jacoco.xml ]; then
+                                            echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
+                                        else
+                                            echo '⚠️ Warning: JaCoCo XML report not found'
+                                            echo 'Attempting to regenerate...'
+                                            ${mavenCmd} jacoco:report || echo '⚠️ Failed to regenerate JaCoCo report'
                                         fi
                                     """
                                     
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
                                             sh """
+                                                if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
+                                                else
+                                                    echo '⚠️ Warning: Proceeding without coverage report'
+                                                fi
                                                 ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
                                             """
                                         }
@@ -398,6 +633,7 @@ pipeline {
                                     echo "✅ S9-Integrations build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S9-Integrations: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
@@ -411,90 +647,122 @@ pipeline {
                             script {
                                 try {
                                     echo "Building S1-CollecteDepots..."
-                                    
-                                    // Use Python3 directly (installed in Jenkins image)
-                                    // Load Rust environment for pydantic-core compilation
-                                    sh """
-                                        export CARGO_HOME=/root/.cargo
-                                        export RUSTUP_HOME=/root/.rustup
-                                        export PATH=\$CARGO_HOME/bin:\$PATH
-                                        if [ -f /root/.cargo/env ]; then
-                                            . /root/.cargo/env
-                                        fi
-                                        python3 -m venv venv || echo 'venv creation failed'
-                                        . venv/bin/activate || echo 'venv activation failed'
-                                        pip install --upgrade pip || echo 'pip upgrade failed'
-                                        pip install -r requirements.txt || echo 'pip install failed'
-                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
-                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
-                                        
-                                        # Ensure coverage.xml is generated even if tests failed
-                                        if [ -f .coverage ]; then
-                                            echo 'Found .coverage file, generating XML report...'
-                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
-                                        else
-                                            echo 'Warning: .coverage file not found'
-                                        fi
-                                        
-                                        # Also try to generate coverage.xml directly if it doesn't exist
-                                        if [ ! -f coverage.xml ]; then
-                                            echo 'Warning: coverage.xml not found, attempting to generate...'
-                                            coverage xml || echo 'Coverage XML not generated'
-                                        else
-                                            echo '✅ coverage.xml found'
-                                            if [ -s coverage.xml ]; then
-                                                echo '✅ coverage.xml is not empty'
-                                                head -20 coverage.xml || echo 'Could not read coverage.xml'
-                                            else
-                                                echo '⚠️ Warning: coverage.xml is empty'
-                                            fi
-                                        fi
-                                        
-                                        # Copy HTML coverage reports to coverage directory
-                                        mkdir -p coverage || true
-                                        if [ -d htmlcov ]; then
-                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
-                                        elif [ -d coverage ]; then
-                                            echo 'Coverage reports already in coverage/'
-                                        fi
-                                    """
-                                    
-                                    // SonarQube analysis
-                                    if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
-                                        withSonarQubeEnv('SonarQube') {
-                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
-                                                sh """
-                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
-                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
-                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
-                                                    . venv/bin/activate
-                                                    
-                                                    # Verify coverage.xml exists before SonarQube analysis
-                                                    if [ -f coverage.xml ]; then
-                                                        echo '✅ coverage.xml found, proceeding with SonarQube analysis'
-                                                        ls -lh coverage.xml || echo 'Could not list coverage.xml'
+                                            
+                                            // Use Python3 directly (installed in Jenkins image)
+                                            // Load Rust environment for pydantic-core compilation
+                                            sh """
+                                                # Install system dependencies required for Python packages
+                                                echo 'Installing system dependencies for Python packages...'
+                                                apt-get update -qq || echo 'apt-get update failed (may already be up to date)'
+                                                apt-get install -y -qq libxml2-dev libxslt1-dev || echo '⚠️ Failed to install libxml2/libxslt dev packages (may already be installed)'
+                                                
+                                                export CARGO_HOME=/root/.cargo
+                                                export RUSTUP_HOME=/root/.rustup
+                                                export PATH=\$CARGO_HOME/bin:\$PATH
+                                                if [ -f /root/.cargo/env ]; then
+                                                    . /root/.cargo/env
+                                                fi
+                                                python3 -m venv venv || { echo '❌ venv creation failed'; exit 1; }
+                                                . venv/bin/activate || { echo '❌ venv activation failed'; exit 1; }
+                                                pip install --upgrade pip || { echo '⚠️ pip upgrade failed'; }
+                                                
+                                                # Install Python dependencies
+                                                echo 'Installing Python dependencies...'
+                                                pip install -r requirements.txt || { 
+                                                    echo '⚠️ pip install failed for some packages, continuing...'
+                                                    # Try to install critical packages individually
+                                                    pip install requests PyGithub confluent-kafka || echo '⚠️ Failed to install some critical packages'
+                                                }
+                                                
+                                                # Install test dependencies
+                                                pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
+                                                # Run tests with proper error handling
+                                                echo 'Running tests...'
+                                                set +e
+                                                pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+                                                TEST_EXIT_CODE=\$?
+                                                set -e
+                                                
+                                                if [ \${TEST_EXIT_CODE} -eq 0 ]; then
+                                                    echo '✅ All tests passed'
+                                                elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
+                                                    echo '⚠️ No tests collected'
+                                                else
+                                                    echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
+                                                fi
+                                                
+                                                # Ensure coverage.xml is generated even if tests failed
+                                                if [ -f .coverage ]; then
+                                                    echo '✅ Found .coverage file, generating XML report...'
+                                                    coverage xml || echo '⚠️ Coverage XML generation from .coverage failed'
+                                                else
+                                                    echo '⚠️ Warning: .coverage file not found'
+                                                fi
+                                                
+                                                # Verify coverage.xml exists and is valid
+                                                if [ -f coverage.xml ]; then
+                                                    echo '✅ coverage.xml found'
+                                                    if [ -s coverage.xml ]; then
+                                                        echo '✅ coverage.xml is not empty'
+                                                        FILE_SIZE=\$(stat -f%z coverage.xml 2>/dev/null || stat -c%s coverage.xml 2>/dev/null || echo '0')
+                                                        echo "coverage.xml size: \${FILE_SIZE} bytes"
                                                     else
-                                                        echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                        echo '⚠️ Warning: coverage.xml is empty'
                                                     fi
-                                                    
-                                                    # Run SonarQube analysis without qualitygate.wait to avoid build failure
-                                                    # Quality Gate will be checked in a separate stage
-                                                    /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings (Quality Gate will be checked separately)"
-                                                """
-                                            }
-                                        }
-                                    } else {
+                                                else
+                                                    echo '⚠️ Warning: coverage.xml not found, attempting to generate...'
+                                                    coverage xml || echo '⚠️ Coverage XML not generated'
+                                                    if [ ! -f coverage.xml ]; then
+                                                        echo '⚠️ Warning: coverage.xml still not found after generation attempt'
+                                                    fi
+                                                fi
+                                                
+                                                # Copy HTML coverage reports to coverage directory
+                                                mkdir -p coverage || true
+                                                if [ -d htmlcov ]; then
+                                                    cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                                elif [ -d coverage ]; then
+                                                    echo 'Coverage reports already in coverage/'
+                                                fi
+                                            """
+                                            
+                                            // SonarQube analysis
+                                            if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
+                                                withSonarQubeEnv('SonarQube') {
+                                                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                        sh """
+                                                            export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                            export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                            export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                            . venv/bin/activate
+                                                            
+                                                            # Verify coverage.xml exists before SonarQube analysis
+                                                            if [ -f coverage.xml ]; then
+                                                                echo '✅ coverage.xml found, proceeding with SonarQube analysis'
+                                                                ls -lh coverage.xml || echo 'Could not list coverage.xml'
+                                                            else
+                                                                echo '⚠️ Warning: coverage.xml not found, SonarQube analysis may not include coverage'
+                                                            fi
+                                                            
+                                                            # Run SonarQube analysis without qualitygate.wait to avoid build failure
+                                                            # Quality Gate will be checked in a separate stage
+                                                            /opt/sonar-scanner/bin/sonar-scanner || echo "⚠️ SonarQube scan completed with warnings (Quality Gate will be checked separately)"
+                                                        """
+                                                    }
+                                                }
+                                            } else {
                                         echo "SonarQube token not configured, skipping analysis for S1-CollecteDepots"
-                                    }
-                                    
+                                            }
+                                            
                                     echo "✅ S1-CollecteDepots build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S1-CollecteDepots: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
+                                }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
                 
                 stage('S4-PretraitementFeatures') {
                     steps {
@@ -504,34 +772,80 @@ pipeline {
                                     echo "Building S4-PretraitementFeatures..."
                                     
                                     sh """
+                                        # Install system dependencies required for Python packages (cmake for pyarrow)
+                                        echo 'Installing system dependencies for Python packages...'
+                                        apt-get update -qq || echo 'apt-get update failed (may already be up to date)'
+                                        apt-get install -y -qq cmake build-essential || echo '⚠️ Failed to install cmake/build-essential (may already be installed)'
+                                        
                                         export CARGO_HOME=/root/.cargo
                                         export RUSTUP_HOME=/root/.rustup
                                         export PATH=\$CARGO_HOME/bin:\$PATH
                                         if [ -f /root/.cargo/env ]; then
                                             . /root/.cargo/env
                                         fi
-                                        python3 -m venv venv || echo 'venv creation failed'
-                                        . venv/bin/activate || echo 'venv activation failed'
-                                        pip install --upgrade pip || echo 'pip upgrade failed'
-                                        pip install -r requirements.txt || echo 'pip install failed'
-                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
-                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        python3 -m venv venv || { echo '❌ venv creation failed'; exit 1; }
+                                        . venv/bin/activate || { echo '❌ venv activation failed'; exit 1; }
+                                        pip install --upgrade pip || { echo '⚠️ pip upgrade failed'; }
                                         
-                                        if [ -f .coverage ]; then
-                                            echo 'Found .coverage file, generating XML report...'
-                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
-                                        fi
+                                        # Install Python dependencies
+                                        echo 'Installing Python dependencies...'
+                                        pip install -r requirements.txt || { 
+                                            echo '⚠️ pip install failed for some packages, continuing...'
+                                            # Try to install critical packages individually
+                                            pip install pandas fastapi scikit-learn || echo '⚠️ Failed to install some critical packages'
+                                        }
                                         
-                                        if [ ! -f coverage.xml ]; then
-                                            echo 'Warning: coverage.xml not found, attempting to generate...'
-                                            coverage xml || echo 'Coverage XML not generated'
+                                        # Install test dependencies
+                                        pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
+                                        
+                                        # Run tests with proper error handling
+                                        echo 'Running tests...'
+                                        set +e
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${TEST_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ All tests passed'
+                                        elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
+                                            echo '⚠️ No tests collected'
                                         else
-                                            echo '✅ coverage.xml found'
+                                            echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
                                         fi
                                         
+                                        # Ensure coverage.xml is generated even if tests failed
+                                        if [ -f .coverage ]; then
+                                            echo '✅ Found .coverage file, generating XML report...'
+                                            coverage xml || echo '⚠️ Coverage XML generation from .coverage failed'
+                                        else
+                                            echo '⚠️ Warning: .coverage file not found'
+                                        fi
+                                        
+                                        # Verify coverage.xml exists and is valid
+                                        if [ -f coverage.xml ]; then
+                                            echo '✅ coverage.xml found'
+                                            if [ -s coverage.xml ]; then
+                                                echo '✅ coverage.xml is not empty'
+                                                FILE_SIZE=\$(stat -f%z coverage.xml 2>/dev/null || stat -c%s coverage.xml 2>/dev/null || echo '0')
+                                                echo "coverage.xml size: \${FILE_SIZE} bytes"
+                                            else
+                                                echo '⚠️ Warning: coverage.xml is empty'
+                                            fi
+                                        else
+                                            echo '⚠️ Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo '⚠️ Coverage XML not generated'
+                                            if [ ! -f coverage.xml ]; then
+                                                echo '⚠️ Warning: coverage.xml still not found after generation attempt'
+                                            fi
+                                        fi
+                                        
+                                        # Copy HTML coverage reports to coverage directory
                                         mkdir -p coverage || true
                                         if [ -d htmlcov ]; then
-                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                            cp -r htmlcov/* coverage/ || echo '⚠️ HTML coverage copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: htmlcov directory not found'
                                         fi
                                     """
                                     
@@ -561,6 +875,7 @@ pipeline {
                                     echo "✅ S4-PretraitementFeatures build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S4-PretraitementFeatures: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
@@ -581,28 +896,69 @@ pipeline {
                                         if [ -f /root/.cargo/env ]; then
                                             . /root/.cargo/env
                                         fi
-                                        python3 -m venv venv || echo 'venv creation failed'
-                                        . venv/bin/activate || echo 'venv activation failed'
-                                        pip install --upgrade pip || echo 'pip upgrade failed'
-                                        pip install -r requirements.txt || echo 'pip install failed'
-                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
-                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        python3 -m venv venv || { echo '❌ venv creation failed'; exit 1; }
+                                        . venv/bin/activate || { echo '❌ venv activation failed'; exit 1; }
+                                        pip install --upgrade pip || { echo '⚠️ pip upgrade failed'; }
                                         
-                                        if [ -f .coverage ]; then
-                                            echo 'Found .coverage file, generating XML report...'
-                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
-                                        fi
+                                        # Install Python dependencies
+                                        echo 'Installing Python dependencies...'
+                                        pip install -r requirements.txt || { 
+                                            echo '⚠️ pip install failed for some packages, continuing...'
+                                            # Try to install critical packages individually
+                                            pip install pandas fastapi scikit-learn xgboost lightgbm || echo '⚠️ Failed to install some critical packages'
+                                        }
                                         
-                                        if [ ! -f coverage.xml ]; then
-                                            echo 'Warning: coverage.xml not found, attempting to generate...'
-                                            coverage xml || echo 'Coverage XML not generated'
+                                        # Install test dependencies
+                                        pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
+                                        
+                                        # Run tests with proper error handling
+                                        echo 'Running tests...'
+                                        set +e
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${TEST_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ All tests passed'
+                                        elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
+                                            echo '⚠️ No tests collected'
                                         else
-                                            echo '✅ coverage.xml found'
+                                            echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
                                         fi
                                         
+                                        # Ensure coverage.xml is generated even if tests failed
+                                        if [ -f .coverage ]; then
+                                            echo '✅ Found .coverage file, generating XML report...'
+                                            coverage xml || echo '⚠️ Coverage XML generation from .coverage failed'
+                                        else
+                                            echo '⚠️ Warning: .coverage file not found'
+                                        fi
+                                        
+                                        # Verify coverage.xml exists and is valid
+                                        if [ -f coverage.xml ]; then
+                                            echo '✅ coverage.xml found'
+                                            if [ -s coverage.xml ]; then
+                                                echo '✅ coverage.xml is not empty'
+                                                FILE_SIZE=\$(stat -f%z coverage.xml 2>/dev/null || stat -c%s coverage.xml 2>/dev/null || echo '0')
+                                                echo "coverage.xml size: \${FILE_SIZE} bytes"
+                                            else
+                                                echo '⚠️ Warning: coverage.xml is empty'
+                                            fi
+                                        else
+                                            echo '⚠️ Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo '⚠️ Coverage XML not generated'
+                                            if [ ! -f coverage.xml ]; then
+                                                echo '⚠️ Warning: coverage.xml still not found after generation attempt'
+                                            fi
+                                        fi
+                                        
+                                        # Copy HTML coverage reports to coverage directory
                                         mkdir -p coverage || true
                                         if [ -d htmlcov ]; then
-                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                            cp -r htmlcov/* coverage/ || echo '⚠️ HTML coverage copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: htmlcov directory not found'
                                         fi
                                     """
                                     
@@ -632,6 +988,7 @@ pipeline {
                                     echo "✅ S5-MLService build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S5-MLService: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
@@ -646,34 +1003,82 @@ pipeline {
                                     echo "Building S6-MoteurPriorisation..."
                                     
                                     sh """
+                                        # Install system dependencies required for Python packages
+                                        echo 'Installing system dependencies for Python packages...'
+                                        apt-get update -qq || echo 'apt-get update failed (may already be up to date)'
+                                        apt-get install -y -qq libpq-dev postgresql-dev || echo '⚠️ Failed to install PostgreSQL dev packages (may already be installed)'
+                                        
                                         export CARGO_HOME=/root/.cargo
                                         export RUSTUP_HOME=/root/.rustup
                                         export PATH=\$CARGO_HOME/bin:\$PATH
                                         if [ -f /root/.cargo/env ]; then
                                             . /root/.cargo/env
                                         fi
-                                        python3 -m venv venv || echo 'venv creation failed'
-                                        . venv/bin/activate || echo 'venv activation failed'
-                                        pip install --upgrade pip || echo 'pip upgrade failed'
-                                        pip install -r requirements.txt || echo 'pip install failed'
-                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
-                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        python3 -m venv venv || { echo '❌ venv creation failed'; exit 1; }
+                                        . venv/bin/activate || { echo '❌ venv activation failed'; exit 1; }
+                                        pip install --upgrade pip || { echo '⚠️ pip upgrade failed'; }
                                         
-                                        if [ -f .coverage ]; then
-                                            echo 'Found .coverage file, generating XML report...'
-                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
-                                        fi
+                                        # Install Python dependencies
+                                        echo 'Installing Python dependencies...'
+                                        # psycopg2-binary 2.9.9 has issues with Python 3.13, try newer version first
+                                        pip install psycopg2-binary --upgrade || echo '⚠️ Failed to upgrade psycopg2-binary, will try version from requirements.txt'
+                                        pip install -r requirements.txt || { 
+                                            echo '⚠️ pip install failed for some packages, continuing...'
+                                            # Try to install critical packages individually, skipping psycopg2-binary if it fails
+                                            pip install fastapi uvicorn sqlalchemy alembic ortools || echo '⚠️ Failed to install some critical packages'
+                                        }
                                         
-                                        if [ ! -f coverage.xml ]; then
-                                            echo 'Warning: coverage.xml not found, attempting to generate...'
-                                            coverage xml || echo 'Coverage XML not generated'
+                                        # Install test dependencies
+                                        pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
+                                        
+                                        # Run tests with proper error handling
+                                        echo 'Running tests...'
+                                        set +e
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${TEST_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ All tests passed'
+                                        elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
+                                            echo '⚠️ No tests collected'
                                         else
-                                            echo '✅ coverage.xml found'
+                                            echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
                                         fi
                                         
+                                        # Ensure coverage.xml is generated even if tests failed
+                                        if [ -f .coverage ]; then
+                                            echo '✅ Found .coverage file, generating XML report...'
+                                            coverage xml || echo '⚠️ Coverage XML generation from .coverage failed'
+                                        else
+                                            echo '⚠️ Warning: .coverage file not found'
+                                        fi
+                                        
+                                        # Verify coverage.xml exists and is valid
+                                        if [ -f coverage.xml ]; then
+                                            echo '✅ coverage.xml found'
+                                            if [ -s coverage.xml ]; then
+                                                echo '✅ coverage.xml is not empty'
+                                                FILE_SIZE=\$(stat -f%z coverage.xml 2>/dev/null || stat -c%s coverage.xml 2>/dev/null || echo '0')
+                                                echo "coverage.xml size: \${FILE_SIZE} bytes"
+                                            else
+                                                echo '⚠️ Warning: coverage.xml is empty'
+                                            fi
+                                        else
+                                            echo '⚠️ Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo '⚠️ Coverage XML not generated'
+                                            if [ ! -f coverage.xml ]; then
+                                                echo '⚠️ Warning: coverage.xml still not found after generation attempt'
+                                            fi
+                                        fi
+                                        
+                                        # Copy HTML coverage reports to coverage directory
                                         mkdir -p coverage || true
                                         if [ -d htmlcov ]; then
-                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                            cp -r htmlcov/* coverage/ || echo '⚠️ HTML coverage copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: htmlcov directory not found'
                                         fi
                                     """
                                     
@@ -703,6 +1108,7 @@ pipeline {
                                     echo "✅ S6-MoteurPriorisation build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S6-MoteurPriorisation: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
@@ -723,28 +1129,69 @@ pipeline {
                                         if [ -f /root/.cargo/env ]; then
                                             . /root/.cargo/env
                                         fi
-                                        python3 -m venv venv || echo 'venv creation failed'
-                                        . venv/bin/activate || echo 'venv activation failed'
-                                        pip install --upgrade pip || echo 'pip upgrade failed'
-                                        pip install -r requirements.txt || echo 'pip install failed'
-                                        pip install pytest pytest-cov coverage || echo 'pytest install failed'
-                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing || echo 'Tests completed (some may have failed)'
+                                        python3 -m venv venv || { echo '❌ venv creation failed'; exit 1; }
+                                        . venv/bin/activate || { echo '❌ venv activation failed'; exit 1; }
+                                        pip install --upgrade pip || { echo '⚠️ pip upgrade failed'; }
                                         
-                                        if [ -f .coverage ]; then
-                                            echo 'Found .coverage file, generating XML report...'
-                                            coverage xml || echo 'Coverage XML generation from .coverage failed'
-                                        fi
+                                        # Install Python dependencies
+                                        echo 'Installing Python dependencies...'
+                                        pip install -r requirements.txt || { 
+                                            echo '⚠️ pip install failed for some packages, continuing...'
+                                            # Try to install critical packages individually
+                                            pip install fastapi uvicorn pydantic jinja2 gitpython || echo '⚠️ Failed to install some critical packages'
+                                        }
                                         
-                                        if [ ! -f coverage.xml ]; then
-                                            echo 'Warning: coverage.xml not found, attempting to generate...'
-                                            coverage xml || echo 'Coverage XML not generated'
+                                        # Install test dependencies
+                                        pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
+                                        
+                                        # Run tests with proper error handling
+                                        echo 'Running tests...'
+                                        set +e
+                                        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${TEST_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ All tests passed'
+                                        elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
+                                            echo '⚠️ No tests collected'
                                         else
-                                            echo '✅ coverage.xml found'
+                                            echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
                                         fi
                                         
+                                        # Ensure coverage.xml is generated even if tests failed
+                                        if [ -f .coverage ]; then
+                                            echo '✅ Found .coverage file, generating XML report...'
+                                            coverage xml || echo '⚠️ Coverage XML generation from .coverage failed'
+                                        else
+                                            echo '⚠️ Warning: .coverage file not found'
+                                        fi
+                                        
+                                        # Verify coverage.xml exists and is valid
+                                        if [ -f coverage.xml ]; then
+                                            echo '✅ coverage.xml found'
+                                            if [ -s coverage.xml ]; then
+                                                echo '✅ coverage.xml is not empty'
+                                                FILE_SIZE=\$(stat -f%z coverage.xml 2>/dev/null || stat -c%s coverage.xml 2>/dev/null || echo '0')
+                                                echo "coverage.xml size: \${FILE_SIZE} bytes"
+                                            else
+                                                echo '⚠️ Warning: coverage.xml is empty'
+                                            fi
+                                        else
+                                            echo '⚠️ Warning: coverage.xml not found, attempting to generate...'
+                                            coverage xml || echo '⚠️ Coverage XML not generated'
+                                            if [ ! -f coverage.xml ]; then
+                                                echo '⚠️ Warning: coverage.xml still not found after generation attempt'
+                                            fi
+                                        fi
+                                        
+                                        # Copy HTML coverage reports to coverage directory
                                         mkdir -p coverage || true
                                         if [ -d htmlcov ]; then
-                                            cp -r htmlcov/* coverage/ || echo 'HTML coverage copy failed'
+                                            cp -r htmlcov/* coverage/ || echo '⚠️ HTML coverage copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: htmlcov directory not found'
                                         fi
                                     """
                                     
@@ -774,6 +1221,7 @@ pipeline {
                                     echo "✅ S7-TestScaffolder build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S7-TestScaffolder: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
@@ -790,33 +1238,89 @@ pipeline {
                                     
                                     // Use npm directly (installed in Jenkins image)
                                     sh """
-                                        npm ci || npm install || echo 'npm install failed'
+                                        # Clean npm cache if npm ci fails due to integrity issues
+                                        echo 'Installing npm dependencies...'
+                                        set +e
+                                        npm ci
+                                        NPM_CI_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${NPM_CI_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ npm ci failed, cleaning cache and trying npm install...'
+                                            npm cache clean --force || echo '⚠️ npm cache clean failed'
+                                            rm -rf node_modules package-lock.json || echo '⚠️ Failed to remove node_modules/package-lock.json'
+                                            npm install || { echo '❌ npm install failed'; exit 1; }
+                                        else
+                                            echo '✅ npm ci succeeded'
+                                        fi
                                         
                                         # Ensure jsdom is installed (required for Vitest)
-                                        npm install --save-dev jsdom || echo 'jsdom install failed'
+                                        echo 'Installing jsdom...'
+                                        npm install --save-dev jsdom || echo '⚠️ jsdom install failed (may already be installed)'
                                         
-                                        npm run lint || echo 'Lint skipped'
-                                        npm run build || echo 'Build failed'
+                                        # Run lint with proper error handling
+                                        echo 'Running lint...'
+                                        set +e
+                                        npm run lint
+                                        LINT_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${LINT_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ Lint passed'
+                                        else
+                                            echo "⚠️ Lint completed with exit code: \${LINT_EXIT_CODE} (continuing build)"
+                                        fi
+                                        
+                                        # Build the application
+                                        echo 'Building application...'
+                                        npm run build || { echo '❌ Build failed'; exit 1; }
+                                        echo '✅ Build successful'
                                         
                                         # Run tests with coverage - ensure LCOV report is generated
-                                        npm run test:coverage || npm test -- --coverage --reporter=verbose || echo 'Tests completed (some may have failed)'
+                                        echo 'Running tests with coverage...'
+                                        set +e
+                                        npm run test:coverage || npm test -- --coverage --reporter=verbose
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${TEST_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ All tests passed'
+                                        else
+                                            echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE} (some tests may have failed)"
+                                        fi
                                         
                                         # Verify coverage reports exist
+                                        echo 'Checking coverage reports...'
                                         if [ -d coverage ]; then
-                                            echo 'Coverage reports generated in coverage/'
-                                            ls -la coverage/ || echo 'Coverage directory listing failed'
-                                            # Ensure LCOV report exists for SonarQube
-                                            if [ ! -f coverage/lcov.info ]; then
-                                                echo 'Warning: coverage/lcov.info not found, checking alternative locations'
-                                                find . -name 'lcov.info' -type f || echo 'No lcov.info found anywhere'
-                                                # Try to generate it explicitly
-                                                npm test -- --coverage --reporter=verbose || echo 'LCOV generation failed'
-                                            else
+                                            echo '✅ Coverage directory found'
+                                            ls -la coverage/ || echo '⚠️ Coverage directory listing failed'
+                                            
+                                            # Check for LCOV report in various locations
+                                            if [ -f coverage/lcov.info ]; then
                                                 echo '✅ LCOV report found at coverage/lcov.info'
+                                                FILE_SIZE=\$(stat -f%z coverage/lcov.info 2>/dev/null || stat -c%s coverage/lcov.info 2>/dev/null || echo '0')
+                                                echo "LCOV report size: \${FILE_SIZE} bytes"
+                                            else
+                                                echo '⚠️ Warning: coverage/lcov.info not found, checking alternative locations...'
+                                                LCOV_FILE=\$(find . -name 'lcov.info' -type f 2>/dev/null | head -n 1)
+                                                if [ -n "\${LCOV_FILE}" ]; then
+                                                    echo "✅ Found LCOV report at: \${LCOV_FILE}"
+                                                    mkdir -p coverage || true
+                                                    cp "\${LCOV_FILE}" coverage/lcov.info || echo '⚠️ Failed to copy LCOV report'
+                                                else
+                                                    echo '⚠️ Warning: No lcov.info found anywhere'
+                                                    echo 'Attempting to generate LCOV report explicitly...'
+                                                    npm test -- --coverage --reporter=verbose || echo '⚠️ LCOV generation failed'
+                                                fi
                                             fi
                                         else
-                                            echo 'Warning: Coverage directory not found, trying to generate it'
-                                            npm test -- --coverage || echo 'Coverage generation failed'
+                                            echo '⚠️ Warning: Coverage directory not found, trying to generate it...'
+                                            npm test -- --coverage || echo '⚠️ Coverage generation failed'
+                                            if [ -d coverage ] && [ -f coverage/lcov.info ]; then
+                                                echo '✅ Coverage directory and LCOV report generated'
+                                            else
+                                                echo '⚠️ Warning: Coverage directory or LCOV report still not found'
+                                            fi
                                         fi
                                     """
                                     
@@ -849,6 +1353,7 @@ pipeline {
                                     echo "✅ S8-DashboardQualite build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S8-DashboardQualite: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
