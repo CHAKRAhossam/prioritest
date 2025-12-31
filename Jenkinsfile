@@ -1534,7 +1534,7 @@ pipeline {
                                         fi
                                     """
                                     
-                                    # Check if test import errors were detected
+                                    // Check if test import errors were detected
                                     def hasImportErrors = sh(
                                         script: 'test -f /tmp/test-import-errors.txt',
                                         returnStatus: true
@@ -1695,7 +1695,7 @@ pipeline {
                                         fi
                                     """
                                     
-                                    # Check if test import errors were detected
+                                    // Check if test import errors were detected
                                     def hasImportErrors = sh(
                                         script: 'test -f /tmp/test-import-errors.txt',
                                         returnStatus: true
@@ -1962,7 +1962,7 @@ pipeline {
                                         fi
                                     """
                                     
-                                    # Check if test import errors were detected
+                                    // Check if test import errors were detected
                                     def hasImportErrors = sh(
                                         script: 'test -f /tmp/test-import-errors.txt',
                                         returnStatus: true
@@ -2450,7 +2450,7 @@ pipeline {
                                         currentBuild.result = 'UNSTABLE'
                                     }
                                     
-                                    # Check if LCOV report is missing (warn but don't fail build)
+                                    // Check if LCOV report is missing (warn but don't fail build)
                                     def lcovMissing = sh(
                                         script: 'test -f /tmp/lcov-missing.txt',
                                         returnStatus: true
