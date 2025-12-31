@@ -33,13 +33,19 @@ La plateforme analyse automatiquement vos dépôts Git, génère des prédiction
 
 ### 🎬 Vidéo de Démonstration Complète
 
-<video width="800" controls>
-  <source src="docs/DEMO.mp4" type="video/mp4">
-  Votre navigateur ne supporte pas la lecture de vidéos HTML5. 
-  <a href="docs/DEMO.mp4">Télécharger la vidéo</a> pour la regarder.
-</video>
+<div align="center">
 
-**Langue :** Français
+[![Vidéo de Démonstration PRIORITEST](https://img.shields.io/badge/▶️-Regarder_la_Démo-red?style=for-the-badge&logo=youtube)](https://youtube.com/watch?v=VIDEO_ID)
+
+📹 **Vidéo de démonstration disponible sur YouTube**
+
+*Cliquez sur le badge ci-dessus pour regarder la démonstration complète*
+
+**Langue :** Français | **Durée :** ~15 minutes
+
+> 💡 **Note :** Pour ajouter la vidéo, uploader `docs/DEMO.mp4` sur YouTube et remplacer `VIDEO_ID` ci-dessus par l'ID de votre vidéo YouTube.
+
+</div>
 
 **Contenu de la démo :**
 - 🚀 Démarrage et configuration
