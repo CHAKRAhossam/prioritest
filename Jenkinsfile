@@ -124,8 +124,19 @@ pipeline {
                                     // Build and test (continue even if tests fail, but ensure they run)
                                     sh """
                                         echo 'Running tests for S0-ApiGateway...'
+                                        
+                                        # Check if there are test classes
+                                        if [ -d src/test/java ] || [ -d src/test ]; then
+                                            echo '✅ Test source directory found'
+                                            TEST_FILES=\$(find src/test -name '*Test.java' -o -name '*Tests.java' 2>/dev/null | wc -l)
+                                            echo "Found \${TEST_FILES} test files"
+                                        else
+                                            echo '⚠️ Warning: No test source directory found (src/test/java or src/test)'
+                                        fi
+                                        
+                                        # Run tests with JaCoCo agent attached
                                         set +e
-                                        ${mavenCmd} test -Dmaven.test.failure.ignore=true
+                                        ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true
                                         TEST_EXIT_CODE=\$?
                                         set -e
                                                 
@@ -136,19 +147,30 @@ pipeline {
                                                     echo "Found \${TEST_COUNT} test report files"
                                                     if [ \${TEST_COUNT} -eq 0 ]; then
                                                         echo '⚠️ Warning: No test reports found - tests may not have executed'
-                                                # Check if there are test classes
-                                                if [ -d src/test ]; then
-                                                    echo '⚠️ Test source directory exists but no reports generated'
-                                                fi
+                                                        # Check Maven output for test execution
+                                                        echo 'Checking Maven test output...'
+                                                        ${mavenCmd} test -X 2>&1 | grep -i "test" | tail -10 || echo 'Could not check Maven test output'
                                                     fi
                                                 else
                                                     echo '⚠️ Warning: target/surefire-reports directory not found'
-                                            # Try to create it and check if tests were skipped
-                                            ${mavenCmd} surefire:test -DskipTests=false 2>&1 | tail -20 || true
+                                                    echo 'Attempting to run tests explicitly...'
+                                                    # Try to run tests explicitly with surefire plugin
+                                                    ${mavenCmd} surefire:test -DskipTests=false -Dmaven.test.failure.ignore=true 2>&1 | tail -30 || echo '⚠️ Explicit test execution failed'
+                                                    
+                                                    # Check again
+                                                    if [ -d target/surefire-reports ]; then
+                                                        echo '✅ Surefire reports directory created after explicit test run'
+                                                        TEST_COUNT=\$(find target/surefire-reports -name '*.xml' 2>/dev/null | wc -l)
+                                                        echo "Found \${TEST_COUNT} test report files"
+                                                    else
+                                                        echo '⚠️ Warning: Tests may not be configured or no tests exist'
+                                                    fi
                                         fi
                                         
                                         if [ \${TEST_EXIT_CODE} -ne 0 ]; then
                                             echo '⚠️ Tests completed with exit code: ' \${TEST_EXIT_CODE}
+                                                else
+                                                    echo '✅ Tests completed successfully'
                                                 fi
                                             """
                                             
@@ -161,9 +183,23 @@ pipeline {
                                                     echo "jacoco.exec size: \${FILE_SIZE} bytes"
                                                     if [ \${FILE_SIZE} -eq 0 ]; then
                                                         echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
+                                                        echo 'Attempting to run tests again with explicit JaCoCo agent...'
+                                                        ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true || echo '⚠️ Failed to run tests with JaCoCo'
                                                     fi
                                                 else
                                                     echo '⚠️ Warning: jacoco.exec not found, tests may not have run'
+                                                    echo 'Attempting to run tests again with explicit JaCoCo agent...'
+                                                    # Try running tests again with JaCoCo agent
+                                                    ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true || echo '⚠️ Failed to run tests with JaCoCo'
+                                                    
+                                                    # Check again
+                                                    if [ -f target/jacoco.exec ]; then
+                                                        echo '✅ jacoco.exec created after retry'
+                                                        FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
+                                                        echo "jacoco.exec size: \${FILE_SIZE} bytes"
+                                                    else
+                                                        echo '⚠️ Warning: jacoco.exec still not found after retry - no tests may have been executed'
+                                                    fi
                                                 fi
                                         
                                         echo 'Generating JaCoCo report...'
@@ -198,20 +234,26 @@ pipeline {
                                             // SonarQube analysis
                                             if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                                 withSonarQubeEnv('SonarQube') {
+                                                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
                                                     sh """
+                                                            export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                            export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                            export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                            
                                                         # Verify XML report exists before analysis
                                                         if [ -f target/site/jacoco/jacoco.xml ]; then
-                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
+                                                                echo '✅ Proceeding with SonarQube analysis with coverage report'
                                                         else
-                                                    echo '⚠️ Warning: Proceeding without coverage report'
+                                                                echo '⚠️ Warning: Proceeding without coverage report'
                                                         fi
                                                         # Run SonarQube analysis without qualitygate.wait to avoid build failure
                                                         # Quality Gate will be checked in a separate stage
                                                         ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
                                                     """
+                                                    }
                                                 }
                                             } else {
-                                        echo "SonarQube token not configured, skipping analysis for S0-ApiGateway"
+                                                echo "SonarQube token not configured, skipping analysis for S0-ApiGateway"
                                             }
                                             
                                     echo "✅ S0-ApiGateway build completed"
@@ -269,12 +311,16 @@ pipeline {
                                         
                                         if [ \${TEST_EXIT_CODE} -ne 0 ]; then
                                             echo '⚠️ Tests completed with exit code: ' \${TEST_EXIT_CODE}
+                                        else
+                                            echo '✅ Tests completed successfully'
                                         fi
                                     """
                                     
                                     // Check for JaCoCo execution data and generate report
                                     sh """
                                         echo 'Checking JaCoCo execution data...'
+                                        
+                                        # Check if jacoco.exec exists
                                         if [ -f target/jacoco.exec ]; then
                                             echo '✅ jacoco.exec found'
                                             FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
@@ -284,13 +330,52 @@ pipeline {
                                             fi
                                         else
                                             echo '⚠️ Warning: jacoco.exec not found after tests'
-                                            echo 'Attempting to run tests again with explicit JaCoCo agent...'
-                                            # Try running with explicit JaCoCo agent preparation
-                                            ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true || echo '⚠️ Failed to run tests with JaCoCo'
+                                            
+                                            # Check if JaCoCo plugin is configured in pom.xml
+                                            echo 'Checking JaCoCo plugin configuration...'
+                                            if grep -q 'jacoco-maven-plugin' pom.xml 2>/dev/null; then
+                                                echo '✅ JaCoCo plugin found in pom.xml'
+                                            else
+                                                echo '⚠️ Warning: JaCoCo plugin not found in pom.xml - may need to be added'
+                                            fi
+                                            
+                                            # Try to find jacoco.exec in alternative locations
+                                            echo 'Searching for jacoco.exec in alternative locations...'
+                                            JACOCO_EXEC=\$(find . -name 'jacoco.exec' -type f 2>/dev/null | head -n 1)
+                                            if [ -n "\${JACOCO_EXEC}" ]; then
+                                                echo "✅ Found jacoco.exec at: \${JACOCO_EXEC}"
+                                                mkdir -p target || true
+                                                cp "\${JACOCO_EXEC}" target/jacoco.exec || echo '⚠️ Failed to copy jacoco.exec'
+                                            else
+                                                echo '⚠️ jacoco.exec not found in any location'
+                                                
+                                                # Try cleaning and running tests again
+                                                echo 'Attempting to clean and run tests again with JaCoCo...'
+                                                ${mavenCmd} clean jacoco:prepare-agent test -Dmaven.test.failure.ignore=true || echo '⚠️ Failed to run tests with JaCoCo after clean'
+                                                
+                                                # Check again
+                                                if [ -f target/jacoco.exec ]; then
+                                                    echo '✅ jacoco.exec created after clean and retry'
+                                                    FILE_SIZE=\$(stat -f%z target/jacoco.exec 2>/dev/null || stat -c%s target/jacoco.exec 2>/dev/null || echo '0')
+                                                    echo "jacoco.exec size: \${FILE_SIZE} bytes"
+                                                else
+                                                    echo '⚠️ Warning: jacoco.exec still not found - JaCoCo agent may not be properly attached'
+                                                    echo 'Checking Maven output for JaCoCo agent attachment...'
+                                                    ${mavenCmd} jacoco:prepare-agent test -Dmaven.test.failure.ignore=true -X 2>&1 | grep -i jacoco | head -10 || echo 'Could not check JaCoCo agent attachment'
+                                                fi
+                                            fi
                                         fi
                                         
                                         echo 'Generating JaCoCo report...'
+                                        # Try to generate report even if jacoco.exec doesn't exist (some versions can do this)
                                         ${mavenCmd} jacoco:report || echo '⚠️ JaCoCo report generation failed or skipped'
+                                        
+                                        # Check if report was generated
+                                        if [ -d target/site/jacoco ]; then
+                                            echo '✅ JaCoCo report directory created'
+                                        else
+                                            echo '⚠️ Warning: JaCoCo report directory not created'
+                                        fi
                                     """
                                     
                                     // Copy JaCoCo HTML reports to coverage directory for publishing
@@ -317,14 +402,20 @@ pipeline {
                                     
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
-                                            sh """
-                                                if [ -f target/site/jacoco/jacoco.xml ]; then
-                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
-                                                else
-                                                    echo '⚠️ Warning: Proceeding without coverage report'
-                                                fi
-                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
-                                            """
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    
+                                                    if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                        echo '✅ Proceeding with SonarQube analysis with coverage report'
+                                                    else
+                                                        echo '⚠️ Warning: Proceeding without coverage report'
+                                                    fi
+                                                    ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
+                                                """
+                                            }
                                         }
                                     } else {
                                         echo "SonarQube token not configured, skipping analysis for S2-AnalyseStatique"
@@ -359,14 +450,19 @@ pipeline {
                                         ${mavenCmd} --version || { echo '❌ Maven command failed'; exit 1; }
                                     """
                                     
-                                    // Clean corrupted Maven repository POMs
+                                    // Clean corrupted Maven repository POMs and JARs
                                     sh """
-                                        echo 'Cleaning corrupted Maven repository POMs...'
+                                        echo 'Cleaning corrupted Maven repository POMs and JARs...'
                                         M2_REPO=\${HOME}/.m2/repository
                                         if [ -d \${M2_REPO} ]; then
                                             echo 'Removing corrupted BOM POMs...'
                                             # Remove corrupted BOM POMs that are empty or contain no data
                                             find \${M2_REPO} -name '*.pom' -type f -size 0 -delete 2>/dev/null || true
+                                            
+                                            echo 'Removing corrupted plugin JARs...'
+                                            # Remove corrupted plugin JARs that are empty or contain no data
+                                            find \${M2_REPO} -path '*/maven-*-plugin/*/*.jar' -type f -size 0 -delete 2>/dev/null || true
+                                            
                                             # Remove specific corrupted BOM directories
                                             rm -rf \${M2_REPO}/io/github/resilience4j/resilience4j-bom/2.0.2 2>/dev/null || true
                                             rm -rf \${M2_REPO}/io/github/openfeign/feign-bom/12.4 2>/dev/null || true
@@ -387,7 +483,12 @@ pipeline {
                                             rm -rf \${M2_REPO}/io/micrometer/micrometer-bom/1.11.4 2>/dev/null || true
                                             rm -rf \${M2_REPO}/io/micrometer/micrometer-tracing-bom/1.1.5 2>/dev/null || true
                                             rm -rf \${M2_REPO}/io/projectreactor/reactor-bom/2022.0.11 2>/dev/null || true
-                                            echo '✅ Corrupted POMs cleaned'
+                                            
+                                            # Remove specific corrupted plugin directories
+                                            echo 'Removing corrupted maven-clean-plugin...'
+                                            rm -rf \${M2_REPO}/org/apache/maven/plugins/maven-clean-plugin/3.2.0 2>/dev/null || true
+                                            
+                                            echo '✅ Corrupted POMs and plugin JARs cleaned'
                                         fi
                                     """
                                     
@@ -395,8 +496,26 @@ pipeline {
                                     sh """
                                         echo 'Compiling S3-HistoriqueTests and downloading dependencies...'
                                         # Force update of dependencies (-U flag) to re-download corrupted POMs
-                                        ${mavenCmd} clean compile -U || { echo '❌ Compilation failed'; exit 1; }
-                                        echo '✅ Compilation successful'
+                                        set +e
+                                        ${mavenCmd} clean compile -U
+                                        COMPILE_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${COMPILE_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ Compilation successful'
+                                        else
+                                            echo '❌ Compilation failed with exit code: ' \${COMPILE_EXIT_CODE}
+                                            echo 'Attempting to clean and retry compilation...'
+                                            # Try cleaning corrupted artifacts again and retry
+                                            rm -rf \${HOME}/.m2/repository/org/apache/maven/plugins/maven-clean-plugin/3.2.0 2>/dev/null || true
+                                            find \${HOME}/.m2/repository -path '*/maven-*-plugin/*/*.jar' -type f -size 0 -delete 2>/dev/null || true
+                                            ${mavenCmd} clean compile -U || { 
+                                                echo '❌ Compilation failed after retry'; 
+                                                echo 'This may indicate a problem with the project configuration or corrupted Maven repository';
+                                                exit 1; 
+                                            }
+                                            echo '✅ Compilation successful after retry'
+                                        fi
                                     """
                                     
                                     // Run tests with JaCoCo agent attached
@@ -466,14 +585,20 @@ pipeline {
                                     
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
-                                            sh """
-                                                if [ -f target/site/jacoco/jacoco.xml ]; then
-                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
-                                                else
-                                                    echo '⚠️ Warning: Proceeding without coverage report'
-                                                fi
-                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
-                                            """
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    
+                                                    if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                        echo '✅ Proceeding with SonarQube analysis with coverage report'
+                                                    else
+                                                        echo '⚠️ Warning: Proceeding without coverage report'
+                                                    fi
+                                                    ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
+                                                """
+                                            }
                                         }
                                     } else {
                                         echo "SonarQube token not configured, skipping analysis for S3-HistoriqueTests"
@@ -492,8 +617,8 @@ pipeline {
                 stage('S9-Integrations') {
                     steps {
                         dir('services/S9-Integrations') {
-                            script {
-                                try {
+                                    script {
+                                        try {
                                     echo "Building S9-Integrations..."
                                     
                                     def mavenCmd = 'mvn'
@@ -508,14 +633,19 @@ pipeline {
                                         ${mavenCmd} --version || { echo '❌ Maven command failed'; exit 1; }
                                     """
                                     
-                                    // Clean corrupted Maven repository POMs (S9-Integrations specific versions)
+                                    // Clean corrupted Maven repository POMs and JARs (S9-Integrations specific versions)
                                     sh """
-                                        echo 'Cleaning corrupted Maven repository POMs...'
+                                        echo 'Cleaning corrupted Maven repository POMs and JARs...'
                                         M2_REPO=\${HOME}/.m2/repository
                                         if [ -d \${M2_REPO} ]; then
                                             echo 'Removing corrupted BOM POMs...'
                                             # Remove corrupted BOM POMs that are empty or contain no data
                                             find \${M2_REPO} -name '*.pom' -type f -size 0 -delete 2>/dev/null || true
+                                            
+                                            echo 'Removing corrupted plugin JARs...'
+                                            # Remove corrupted plugin JARs that are empty or contain no data
+                                            find \${M2_REPO} -path '*/maven-*-plugin/*/*.jar' -type f -size 0 -delete 2>/dev/null || true
+                                            
                                             # Remove specific corrupted BOM directories for S9-Integrations
                                             rm -rf \${M2_REPO}/io/github/resilience4j/resilience4j-bom/2.1.0 2>/dev/null || true
                                             rm -rf \${M2_REPO}/io/github/openfeign/feign-bom/13.1 2>/dev/null || true
@@ -538,7 +668,12 @@ pipeline {
                                             rm -rf \${M2_REPO}/io/micrometer/micrometer-bom/1.12.1 2>/dev/null || true
                                             rm -rf \${M2_REPO}/io/micrometer/micrometer-tracing-bom/1.2.1 2>/dev/null || true
                                             rm -rf \${M2_REPO}/io/projectreactor/reactor-bom/2023.0.1 2>/dev/null || true
-                                            echo '✅ Corrupted POMs cleaned'
+                                            
+                                            # Remove specific corrupted plugin directories
+                                            echo 'Removing corrupted maven-clean-plugin...'
+                                            rm -rf \${M2_REPO}/org/apache/maven/plugins/maven-clean-plugin/3.3.2 2>/dev/null || true
+                                            
+                                            echo '✅ Corrupted POMs and plugin JARs cleaned'
                                         fi
                                     """
                                     
@@ -546,8 +681,26 @@ pipeline {
                                     sh """
                                         echo 'Compiling S9-Integrations and downloading dependencies...'
                                         # Force update of dependencies (-U flag) to re-download corrupted POMs
-                                        ${mavenCmd} clean compile -U || { echo '❌ Compilation failed'; exit 1; }
-                                        echo '✅ Compilation successful'
+                                        set +e
+                                        ${mavenCmd} clean compile -U
+                                        COMPILE_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${COMPILE_EXIT_CODE} -eq 0 ]; then
+                                            echo '✅ Compilation successful'
+                                        else
+                                            echo '❌ Compilation failed with exit code: ' \${COMPILE_EXIT_CODE}
+                                            echo 'Attempting to clean corrupted artifacts again and retry compilation...'
+                                            # Try cleaning corrupted artifacts again and retry
+                                            rm -rf \${HOME}/.m2/repository/org/apache/maven/plugins/maven-clean-plugin/3.3.2 2>/dev/null || true
+                                            find \${HOME}/.m2/repository -path '*/maven-*-plugin/*/*.jar' -type f -size 0 -delete 2>/dev/null || true
+                                            ${mavenCmd} clean compile -U || { 
+                                                echo '❌ Compilation failed after retry'; 
+                                                echo 'This may indicate a problem with the project configuration or corrupted Maven repository';
+                                                exit 1; 
+                                            }
+                                            echo '✅ Compilation successful after retry'
+                                        fi
                                     """
                                     
                                     // Run tests with JaCoCo agent attached
@@ -617,14 +770,20 @@ pipeline {
                                     
                                     if (env.SONAR_TOKEN && env.SONAR_TOKEN != '') {
                                         withSonarQubeEnv('SonarQube') {
-                                            sh """
-                                                if [ -f target/site/jacoco/jacoco.xml ]; then
-                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
-                                                else
-                                                    echo '⚠️ Warning: Proceeding without coverage report'
-                                                fi
-                                                ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings'
-                                            """
+                                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN_VALUE')]) {
+                                                sh """
+                                                    export PATH=/opt/sonar-scanner/bin:\$PATH
+                                                    export SONAR_HOST_URL=${env.SONARQUBE_URL ?: 'http://sonarqube:9000'}
+                                                    export SONAR_TOKEN=\${SONAR_TOKEN_VALUE}
+                                                    
+                                                    if [ -f target/site/jacoco/jacoco.xml ]; then
+                                                        echo '✅ Proceeding with SonarQube analysis with coverage report'
+                                                    else
+                                                        echo '⚠️ Warning: Proceeding without coverage report'
+                                                    fi
+                                                    ${mavenCmd} sonar:sonar || echo '⚠️ SonarQube analysis completed with warnings (Quality Gate will be checked separately)'
+                                                """
+                                            }
                                         }
                                     } else {
                                         echo "SonarQube token not configured, skipping analysis for S9-Integrations"
@@ -633,6 +792,7 @@ pipeline {
                                     echo "✅ S9-Integrations build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S9-Integrations: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                     currentBuild.result = 'UNSTABLE'
                                 }
                             }
@@ -653,8 +813,39 @@ pipeline {
                                             sh """
                                                 # Install system dependencies required for Python packages
                                                 echo 'Installing system dependencies for Python packages...'
-                                                apt-get update -qq || echo 'apt-get update failed (may already be up to date)'
-                                                apt-get install -y -qq libxml2-dev libxslt1-dev || echo '⚠️ Failed to install libxml2/libxslt dev packages (may already be installed)'
+                                                
+                                                # Wait for apt-get lock to be released (max 60 seconds)
+                                                echo 'Checking for apt-get lock...'
+                                                COUNTER=0
+                                                while [ -f /var/lib/apt/lists/lock ] || [ -f /var/lib/dpkg/lock ] || [ -f /var/cache/apt/archives/lock ]; do
+                                                    if [ \${COUNTER} -ge 60 ]; then
+                                                        echo '⚠️ apt-get lock timeout, attempting to install packages anyway...'
+                                                        break
+                                                    fi
+                                                    echo "Waiting for apt-get lock to be released... (\${COUNTER}/60)"
+                                                    sleep 2
+                                                    COUNTER=\$((COUNTER + 2))
+                                                done
+                                                
+                                                # Try to update package list
+                                                set +e
+                                                apt-get update -qq
+                                                APT_UPDATE_EXIT_CODE=\$?
+                                                set -e
+                                                
+                                                if [ \${APT_UPDATE_EXIT_CODE} -ne 0 ]; then
+                                                    echo '⚠️ apt-get update failed, attempting to install packages anyway...'
+                                                fi
+                                                
+                                                # Install required packages (try even if update failed)
+                                                set +e
+                                                apt-get install -y -qq libxml2-dev libxslt1-dev 2>&1 | grep -v "Unable to locate package" || {
+                                                    echo '⚠️ Failed to install libxml2-dev/libxslt1-dev, checking if already installed...'
+                                                    # Check if packages are already installed
+                                                    dpkg -l | grep -q libxml2-dev && echo '✅ libxml2-dev already installed' || echo '⚠️ libxml2-dev not found'
+                                                    dpkg -l | grep -q libxslt1-dev && echo '✅ libxslt1-dev already installed' || echo '⚠️ libxslt1-dev not found'
+                                                }
+                                                set -e
                                                 
                                                 export CARGO_HOME=/root/.cargo
                                                 export RUSTUP_HOME=/root/.rustup
@@ -668,11 +859,22 @@ pipeline {
                                                 
                                                 # Install Python dependencies
                                                 echo 'Installing Python dependencies...'
-                                                pip install -r requirements.txt || { 
-                                                    echo '⚠️ pip install failed for some packages, continuing...'
-                                                    # Try to install critical packages individually
-                                                    pip install requests PyGithub confluent-kafka || echo '⚠️ Failed to install some critical packages'
-                                                }
+                                                set +e
+                                                pip install -r requirements.txt
+                                                PIP_INSTALL_EXIT_CODE=\$?
+                                                set -e
+                                                
+                                                if [ \${PIP_INSTALL_EXIT_CODE} -ne 0 ]; then
+                                                    echo '⚠️ pip install -r requirements.txt failed with exit code: ' \${PIP_INSTALL_EXIT_CODE}
+                                                    echo 'Attempting to install critical packages individually...'
+                                                    # Install critical packages that are likely needed
+                                                    pip install requests PyGithub confluent-kafka pydantic-settings tenacity fastapi uvicorn pydantic sqlalchemy alembic || echo '⚠️ Failed to install some critical packages'
+                                                    
+                                                    # Try to install lxml separately (may fail if system packages not available)
+                                                    pip install lxml || echo '⚠️ Failed to install lxml (may require libxml2-dev/libxslt1-dev)'
+                                                else
+                                                    echo '✅ Python dependencies installed successfully'
+                                                fi
                                                 
                                                 # Install test dependencies
                                                 pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
@@ -755,10 +957,10 @@ pipeline {
                                             }
                                             
                                     echo "✅ S1-CollecteDepots build completed"
-                                } catch (Exception e) {
+                                        } catch (Exception e) {
                                     echo "❌ Error building S1-CollecteDepots: ${e.getMessage()}"
                                     currentBuild.result = 'UNSTABLE'
-                                }
+                                        }
                                     }
                                 }
                             }
@@ -774,8 +976,39 @@ pipeline {
                                     sh """
                                         # Install system dependencies required for Python packages (cmake for pyarrow)
                                         echo 'Installing system dependencies for Python packages...'
-                                        apt-get update -qq || echo 'apt-get update failed (may already be up to date)'
-                                        apt-get install -y -qq cmake build-essential || echo '⚠️ Failed to install cmake/build-essential (may already be installed)'
+                                        
+                                        # Wait for apt-get lock to be released (max 60 seconds)
+                                        echo 'Checking for apt-get lock...'
+                                        COUNTER=0
+                                        while [ -f /var/lib/apt/lists/lock ] || [ -f /var/lib/dpkg/lock ] || [ -f /var/cache/apt/archives/lock ]; do
+                                            if [ \${COUNTER} -ge 60 ]; then
+                                                echo '⚠️ apt-get lock timeout, attempting to install packages anyway...'
+                                                break
+                                            fi
+                                            echo "Waiting for apt-get lock to be released... (\${COUNTER}/60)"
+                                            sleep 2
+                                            COUNTER=\$((COUNTER + 2))
+                                        done
+                                        
+                                        # Try to update package list
+                                        set +e
+                                        apt-get update -qq
+                                        APT_UPDATE_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${APT_UPDATE_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ apt-get update failed, attempting to install packages anyway...'
+                                        fi
+                                        
+                                        # Install required packages (try even if update failed)
+                                        set +e
+                                        apt-get install -y -qq cmake build-essential 2>&1 | grep -v "Unable to locate package" || {
+                                            echo '⚠️ Failed to install cmake/build-essential, checking if already installed...'
+                                            # Check if packages are already installed
+                                            dpkg -l | grep -q cmake && echo '✅ cmake already installed' || echo '⚠️ cmake not found'
+                                            dpkg -l | grep -q build-essential && echo '✅ build-essential already installed' || echo '⚠️ build-essential not found'
+                                        }
+                                        set -e
                                         
                                         export CARGO_HOME=/root/.cargo
                                         export RUSTUP_HOME=/root/.rustup
@@ -789,11 +1022,38 @@ pipeline {
                                         
                                         # Install Python dependencies
                                         echo 'Installing Python dependencies...'
-                                        pip install -r requirements.txt || { 
-                                            echo '⚠️ pip install failed for some packages, continuing...'
-                                            # Try to install critical packages individually
-                                            pip install pandas fastapi scikit-learn || echo '⚠️ Failed to install some critical packages'
-                                        }
+                                        set +e
+                                        pip install -r requirements.txt
+                                        PIP_INSTALL_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${PIP_INSTALL_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ pip install -r requirements.txt failed with exit code: ' \${PIP_INSTALL_EXIT_CODE}
+                                            echo 'Attempting to install critical packages individually...'
+                                            
+                                            # Try to install pyarrow with a specific version that has pre-built wheels (avoid compilation)
+                                            echo 'Attempting to install pyarrow with pre-built wheel (version 22.0.0)...'
+                                            pip install --only-binary :all: "pyarrow>=12.0.0,<23.0.0" || {
+                                                echo '⚠️ Failed to install pyarrow with pre-built wheel, trying specific version...'
+                                                pip install "pyarrow==22.0.0" || {
+                                                    echo '⚠️ Failed to install pyarrow 22.0.0, trying latest available wheel...'
+                                                    pip install --only-binary :all: pyarrow || echo '⚠️ Failed to install pyarrow (may require Arrow C++ library)'
+                                                }
+                                            }
+                                            
+                                            # Install critical packages that are required for tests
+                                            echo 'Installing critical packages for tests...'
+                                            pip install httpx sqlalchemy imbalanced-learn || echo '⚠️ Failed to install some critical packages'
+                                            
+                                            # Install other important packages
+                                            pip install pandas fastapi scikit-learn uvicorn pydantic requests kafka-python pytest-asyncio || echo '⚠️ Failed to install some additional packages'
+                                        else
+                                            echo '✅ Python dependencies installed successfully'
+                                        fi
+                                        
+                                        # Ensure critical packages are installed even if requirements.txt succeeded (in case pyarrow failed)
+                                        echo 'Verifying critical packages are installed...'
+                                        pip install httpx sqlalchemy imbalanced-learn || echo '⚠️ Some packages may already be installed'
                                         
                                         # Install test dependencies
                                         pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
@@ -902,11 +1162,27 @@ pipeline {
                                         
                                         # Install Python dependencies
                                         echo 'Installing Python dependencies...'
-                                        pip install -r requirements.txt || { 
-                                            echo '⚠️ pip install failed for some packages, continuing...'
-                                            # Try to install critical packages individually
-                                            pip install pandas fastapi scikit-learn xgboost lightgbm || echo '⚠️ Failed to install some critical packages'
-                                        }
+                                        set +e
+                                        pip install -r requirements.txt
+                                        PIP_INSTALL_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${PIP_INSTALL_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ pip install -r requirements.txt failed with exit code: ' \${PIP_INSTALL_EXIT_CODE}
+                                            echo 'Attempting to install critical packages individually...'
+                                            
+                                            # Install critical packages that are required for the service
+                                            pip install pandas fastapi scikit-learn xgboost lightgbm shap matplotlib seaborn || echo '⚠️ Failed to install some critical packages'
+                                            
+                                            # Install other important packages
+                                            pip install uvicorn pydantic requests httpx joblib || echo '⚠️ Failed to install some additional packages'
+                                        else
+                                            echo '✅ Python dependencies installed successfully'
+                                        fi
+                                        
+                                        # Ensure critical packages are installed even if requirements.txt succeeded
+                                        echo 'Verifying critical packages are installed...'
+                                        pip install httpx || echo '⚠️ httpx may already be installed'
                                         
                                         # Install test dependencies
                                         pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
@@ -1005,8 +1281,38 @@ pipeline {
                                     sh """
                                         # Install system dependencies required for Python packages
                                         echo 'Installing system dependencies for Python packages...'
-                                        apt-get update -qq || echo 'apt-get update failed (may already be up to date)'
-                                        apt-get install -y -qq libpq-dev postgresql-dev || echo '⚠️ Failed to install PostgreSQL dev packages (may already be installed)'
+                                        
+                                        # Wait for apt-get lock to be released (max 60 seconds)
+                                        echo 'Checking for apt-get lock...'
+                                        COUNTER=0
+                                        while [ -f /var/lib/apt/lists/lock ] || [ -f /var/lib/dpkg/lock ] || [ -f /var/cache/apt/archives/lock ]; do
+                                            if [ \${COUNTER} -ge 60 ]; then
+                                                echo '⚠️ apt-get lock timeout, attempting to install packages anyway...'
+                                                break
+                                            fi
+                                            echo "Waiting for apt-get lock to be released... (\${COUNTER}/60)"
+                                            sleep 2
+                                            COUNTER=\$((COUNTER + 2))
+                                        done
+                                        
+                                        # Try to update package list
+                                        set +e
+                                        apt-get update -qq
+                                        APT_UPDATE_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${APT_UPDATE_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ apt-get update failed, attempting to install packages anyway...'
+                                        fi
+                                        
+                                        # Install required packages (libpq-dev only, postgresql-dev doesn't exist)
+                                        set +e
+                                        apt-get install -y -qq libpq-dev 2>&1 | grep -v "Unable to locate package" || {
+                                            echo '⚠️ Failed to install libpq-dev, checking if already installed...'
+                                            # Check if package is already installed
+                                            dpkg -l | grep -q libpq-dev && echo '✅ libpq-dev already installed' || echo '⚠️ libpq-dev not found'
+                                        }
+                                        set -e
                                         
                                         export CARGO_HOME=/root/.cargo
                                         export RUSTUP_HOME=/root/.rustup
@@ -1020,13 +1326,38 @@ pipeline {
                                         
                                         # Install Python dependencies
                                         echo 'Installing Python dependencies...'
-                                        # psycopg2-binary 2.9.9 has issues with Python 3.13, try newer version first
-                                        pip install psycopg2-binary --upgrade || echo '⚠️ Failed to upgrade psycopg2-binary, will try version from requirements.txt'
-                                        pip install -r requirements.txt || { 
-                                            echo '⚠️ pip install failed for some packages, continuing...'
-                                            # Try to install critical packages individually, skipping psycopg2-binary if it fails
-                                            pip install fastapi uvicorn sqlalchemy alembic ortools || echo '⚠️ Failed to install some critical packages'
+                                        
+                                        # psycopg2-binary 2.9.9 has issues with Python 3.13, install compatible version first
+                                        echo 'Installing psycopg2-binary compatible with Python 3.13...'
+                                        pip install "psycopg2-binary>=2.9.11" || {
+                                            echo '⚠️ Failed to install psycopg2-binary>=2.9.11, trying latest version...'
+                                            pip install psycopg2-binary --upgrade || echo '⚠️ Failed to install psycopg2-binary'
                                         }
+                                        
+                                        set +e
+                                        pip install -r requirements.txt
+                                        PIP_INSTALL_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${PIP_INSTALL_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ pip install -r requirements.txt failed with exit code: ' \${PIP_INSTALL_EXIT_CODE}
+                                            echo 'Attempting to install critical packages individually...'
+                                            
+                                            # Install critical packages that are required for the service
+                                            pip install fastapi uvicorn sqlalchemy alembic ortools httpx python-dotenv || echo '⚠️ Failed to install some critical packages'
+                                            
+                                            # Try to install psycopg2-binary again if it failed (skip if already installed)
+                                            pip show psycopg2-binary >/dev/null 2>&1 || {
+                                                echo '⚠️ psycopg2-binary not found, attempting to install compatible version...'
+                                                pip install "psycopg2-binary>=2.9.11" || echo '⚠️ Failed to install psycopg2-binary (may require libpq-dev)'
+                                            }
+                                        else
+                                            echo '✅ Python dependencies installed successfully'
+                                        fi
+                                        
+                                        # Ensure critical packages are installed even if requirements.txt succeeded
+                                        echo 'Verifying critical packages are installed...'
+                                        pip install httpx python-dotenv || echo '⚠️ Some packages may already be installed'
                                         
                                         # Install test dependencies
                                         pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
@@ -1135,11 +1466,30 @@ pipeline {
                                         
                                         # Install Python dependencies
                                         echo 'Installing Python dependencies...'
-                                        pip install -r requirements.txt || { 
-                                            echo '⚠️ pip install failed for some packages, continuing...'
+                                        set +e
+                                        pip install -r requirements.txt
+                                        PIP_INSTALL_EXIT_CODE=\$?
+                                        set -e
+                                        
+                                        if [ \${PIP_INSTALL_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ pip install -r requirements.txt failed with exit code: ' \${PIP_INSTALL_EXIT_CODE}
+                                            echo 'Attempting to install critical packages individually...'
                                             # Try to install critical packages individually
-                                            pip install fastapi uvicorn pydantic jinja2 gitpython || echo '⚠️ Failed to install some critical packages'
-                                        }
+                                            pip install fastapi uvicorn pydantic pydantic-settings jinja2 gitpython httpx python-dotenv || echo '⚠️ Failed to install some critical packages'
+                                        else
+                                            echo '✅ Python dependencies installed successfully'
+                                        fi
+                                        
+                                        # Verify critical packages are installed even if requirements.txt succeeded
+                                        echo 'Verifying critical Python packages are installed...'
+                                        pip show fastapi >/dev/null || { echo '⚠️ fastapi not found after install'; }
+                                        pip show uvicorn >/dev/null || { echo '⚠️ uvicorn not found after install'; }
+                                        pip show pydantic >/dev/null || { echo '⚠️ pydantic not found after install'; }
+                                        pip show jinja2 >/dev/null || { echo '⚠️ jinja2 not found after install'; }
+                                        pip show gitpython >/dev/null || { echo '⚠️ gitpython not found after install'; }
+                                        pip show httpx >/dev/null || { echo '⚠️ httpx not found after install'; }
+                                        pip show python-dotenv >/dev/null || { echo '⚠️ python-dotenv not found after install'; }
+                                        echo '✅ Critical Python packages verification complete'
                                         
                                         # Install test dependencies
                                         pip install pytest pytest-cov coverage || { echo '⚠️ pytest install failed'; }
@@ -1238,18 +1588,33 @@ pipeline {
                                     
                                     // Use npm directly (installed in Jenkins image)
                                     sh """
-                                        # Clean npm cache if npm ci fails due to integrity issues
+                                        # Install npm dependencies with fallback to npm install if npm ci fails
                                         echo 'Installing npm dependencies...'
                                         set +e
-                                        npm ci
+                                        npm ci 2>&1 | head -30
                                         NPM_CI_EXIT_CODE=\$?
                                         set -e
                                         
                                         if [ \${NPM_CI_EXIT_CODE} -ne 0 ]; then
-                                            echo '⚠️ npm ci failed, cleaning cache and trying npm install...'
-                                            npm cache clean --force || echo '⚠️ npm cache clean failed'
-                                            rm -rf node_modules package-lock.json || echo '⚠️ Failed to remove node_modules/package-lock.json'
-                                            npm install || { echo '❌ npm install failed'; exit 1; }
+                                            echo '⚠️ npm ci failed (exit code: ' \${NPM_CI_EXIT_CODE} '), likely due to package-lock.json desync'
+                                            echo 'Cleaning npm cache and node_modules, then trying npm install...'
+                                            
+                                            # Clean npm cache
+                                            npm cache clean --force || echo '⚠️ npm cache clean failed (may already be clean)'
+                                            
+                                            # Remove node_modules and package-lock.json
+                                            rm -rf node_modules package-lock.json || echo '⚠️ Failed to remove node_modules/package-lock.json (may not exist)'
+                                            
+                                            # Install dependencies
+                                            echo 'Running npm install to regenerate package-lock.json...'
+                                            npm install || { 
+                                                echo '❌ npm install failed'
+                                                echo 'Attempting to install critical dependencies individually...'
+                                                npm install --save-dev jsdom vitest @vitest/coverage-v8 || echo '⚠️ Failed to install critical test dependencies'
+                                                exit 1
+                                            }
+                                            
+                                            echo '✅ npm install succeeded, package-lock.json regenerated'
                                         else
                                             echo '✅ npm ci succeeded'
                                         fi
@@ -1279,7 +1644,7 @@ pipeline {
                                         # Run tests with coverage - ensure LCOV report is generated
                                         echo 'Running tests with coverage...'
                                         set +e
-                                        npm run test:coverage || npm test -- --coverage --reporter=verbose
+                                        npm run test:coverage
                                         TEST_EXIT_CODE=\$?
                                         set -e
                                         
@@ -1289,38 +1654,91 @@ pipeline {
                                             echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE} (some tests may have failed)"
                                         fi
                                         
-                                        # Verify coverage reports exist
+                                        # Verify coverage reports exist and generate LCOV if needed
                                         echo 'Checking coverage reports...'
-                                        if [ -d coverage ]; then
-                                            echo '✅ Coverage directory found'
-                                            ls -la coverage/ || echo '⚠️ Coverage directory listing failed'
-                                            
-                                            # Check for LCOV report in various locations
-                                            if [ -f coverage/lcov.info ]; then
+                                        
+                                        # Check for coverage directory
+                                        if [ ! -d coverage ]; then
+                                            echo '⚠️ Warning: Coverage directory not found, creating it...'
+                                            mkdir -p coverage || echo '⚠️ Failed to create coverage directory'
+                                        fi
+                                        
+                                        # Check for LCOV report in various locations
+                                        LCOV_FILE=""
+                                        if [ -f coverage/lcov.info ]; then
+                                            LCOV_FILE="coverage/lcov.info"
                                                 echo '✅ LCOV report found at coverage/lcov.info'
-                                                FILE_SIZE=\$(stat -f%z coverage/lcov.info 2>/dev/null || stat -c%s coverage/lcov.info 2>/dev/null || echo '0')
-                                                echo "LCOV report size: \${FILE_SIZE} bytes"
-                                            else
-                                                echo '⚠️ Warning: coverage/lcov.info not found, checking alternative locations...'
-                                                LCOV_FILE=\$(find . -name 'lcov.info' -type f 2>/dev/null | head -n 1)
-                                                if [ -n "\${LCOV_FILE}" ]; then
-                                                    echo "✅ Found LCOV report at: \${LCOV_FILE}"
-                                                    mkdir -p coverage || true
-                                                    cp "\${LCOV_FILE}" coverage/lcov.info || echo '⚠️ Failed to copy LCOV report'
-                                                else
-                                                    echo '⚠️ Warning: No lcov.info found anywhere'
-                                                    echo 'Attempting to generate LCOV report explicitly...'
-                                                    npm test -- --coverage --reporter=verbose || echo '⚠️ LCOV generation failed'
+                                        else
+                                            echo '⚠️ Warning: coverage/lcov.info not found, checking alternative locations...'
+                                            # Search for lcov.info in common locations
+                                            for LOCATION in "./coverage/lcov.info" "./lcov.info" "./coverage/.tmp/lcov.info" "./.coverage/lcov.info"; do
+                                                if [ -f "\${LOCATION}" ]; then
+                                                    LCOV_FILE="\${LOCATION}"
+                                                    echo "✅ Found LCOV report at: \${LOCATION}"
+                                                    break
+                                                fi
+                                            done
+                                            
+                                            # If still not found, search recursively
+                                            if [ -z "\${LCOV_FILE}" ]; then
+                                                FOUND_LCOV=\$(find . -name 'lcov.info' -type f 2>/dev/null | grep -v node_modules | head -n 1)
+                                                if [ -n "\${FOUND_LCOV}" ]; then
+                                                    LCOV_FILE="\${FOUND_LCOV}"
+                                                    echo "✅ Found LCOV report at: \${FOUND_LCOV}"
                                                 fi
                                             fi
-                                        else
-                                            echo '⚠️ Warning: Coverage directory not found, trying to generate it...'
-                                            npm test -- --coverage || echo '⚠️ Coverage generation failed'
-                                            if [ -d coverage ] && [ -f coverage/lcov.info ]; then
-                                                echo '✅ Coverage directory and LCOV report generated'
-                                            else
-                                                echo '⚠️ Warning: Coverage directory or LCOV report still not found'
+                                            
+                                            # Copy to standard location if found elsewhere
+                                            if [ -n "\${LCOV_FILE}" ] && [ "\${LCOV_FILE}" != "coverage/lcov.info" ]; then
+                                                mkdir -p coverage || true
+                                                cp "\${LCOV_FILE}" coverage/lcov.info || echo '⚠️ Failed to copy LCOV report'
+                                                LCOV_FILE="coverage/lcov.info"
                                             fi
+                                        fi
+                                        
+                                        # If LCOV still not found, try to generate it explicitly
+                                        if [ -z "\${LCOV_FILE}" ] || [ ! -f "\${LCOV_FILE}" ]; then
+                                            echo '⚠️ Warning: No lcov.info found, attempting to generate LCOV report explicitly...'
+                                            
+                                            # Check if vitest.config.ts exists and configure coverage reporter
+                                            if [ -f vitest.config.ts ] || [ -f vitest.config.js ]; then
+                                                echo 'Vitest config found, ensuring LCOV reporter is configured...'
+                                            fi
+                                            
+                                            # Try to generate coverage with explicit LCOV output
+                                            set +e
+                                            npm test -- --coverage --reporter=verbose --coverage.reporter=lcov --coverage.reporter=text --coverage.reporter=html 2>&1 | tail -20
+                                            COVERAGE_EXIT=\$?
+                                            set -e
+                                            
+                                            # Check again for LCOV file
+                                            if [ -f coverage/lcov.info ]; then
+                                                LCOV_FILE="coverage/lcov.info"
+                                                echo '✅ LCOV report generated successfully'
+                                            else
+                                                # Check in .tmp directory (Vitest sometimes puts it there)
+                                                if [ -f coverage/.tmp/lcov.info ]; then
+                                                    cp coverage/.tmp/lcov.info coverage/lcov.info || echo '⚠️ Failed to copy from .tmp'
+                                                    LCOV_FILE="coverage/lcov.info"
+                                                    echo '✅ LCOV report found in .tmp and copied'
+                                                else
+                                                    echo '⚠️ Warning: LCOV report generation failed or not found'
+                                                fi
+                                            fi
+                                        fi
+                                        
+                                        # Final verification
+                                        if [ -n "\${LCOV_FILE}" ] && [ -f "\${LCOV_FILE}" ]; then
+                                            FILE_SIZE=\$(stat -f%z "\${LCOV_FILE}" 2>/dev/null || stat -c%s "\${LCOV_FILE}" 2>/dev/null || echo '0')
+                                            echo "✅ LCOV report verified: \${LCOV_FILE} (size: \${FILE_SIZE} bytes)"
+                                            
+                                            # Ensure it's in the standard location for SonarQube
+                                            if [ "\${LCOV_FILE}" != "coverage/lcov.info" ]; then
+                                                mkdir -p coverage || true
+                                                cp "\${LCOV_FILE}" coverage/lcov.info || echo '⚠️ Failed to copy to standard location'
+                                            fi
+                                        else
+                                            echo '⚠️ Warning: LCOV report not available - SonarQube analysis will proceed without coverage'
                                         fi
                                     """
                                     
