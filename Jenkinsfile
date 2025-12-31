@@ -2428,7 +2428,7 @@ pipeline {
                                         fi
                                     """
                                     
-                                    # Check for lint errors
+                                    // Check for lint errors
                                     def hasLintErrors = sh(
                                         script: 'test -f /tmp/lint-errors.txt',
                                         returnStatus: true
@@ -2439,7 +2439,7 @@ pipeline {
                                         currentBuild.result = 'UNSTABLE'
                                     }
                                     
-                                    # Check for test errors
+                                    // Check for test errors
                                     def hasTestErrors = sh(
                                         script: 'test -f /tmp/test-errors.txt',
                                         returnStatus: true
