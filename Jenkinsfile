@@ -108,21 +108,47 @@ pipeline {
                                         mavenCmd = './mvnw'
                                     }
                                     
-                                    // Build and test (continue even if tests fail)
+                                    // Verify Maven works first
+                                    sh """
+                                        echo 'Verifying Maven installation...'
+                                        ${mavenCmd} --version || { echo '❌ Maven command failed'; exit 1; }
+                                    """
+                                    
+                                    // Compile first to catch compilation errors
+                                    sh """
+                                        echo 'Compiling S0-ApiGateway...'
+                                        ${mavenCmd} clean compile || { echo '❌ Compilation failed'; exit 1; }
+                                        echo '✅ Compilation successful'
+                                    """
+                                    
+                                    // Build and test (continue even if tests fail, but ensure they run)
                                     sh """
                                         echo 'Running tests for S0-ApiGateway...'
-                                        ${mavenCmd} clean test -Dmaven.test.failure.ignore=true || echo 'Tests completed with some failures'
+                                        set +e
+                                        ${mavenCmd} test -Dmaven.test.failure.ignore=true
+                                        TEST_EXIT_CODE=\$?
+                                        set -e
                                         
                                         # Check if tests actually ran
                                         if [ -d target/surefire-reports ]; then
                                             echo '✅ Surefire reports directory exists'
-                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' | wc -l)
+                                            TEST_COUNT=\$(find target/surefire-reports -name '*.xml' 2>/dev/null | wc -l)
                                             echo "Found \${TEST_COUNT} test report files"
                                             if [ \${TEST_COUNT} -eq 0 ]; then
                                                 echo '⚠️ Warning: No test reports found - tests may not have executed'
+                                                # Check if there are test classes
+                                                if [ -d src/test ]; then
+                                                    echo '⚠️ Test source directory exists but no reports generated'
+                                                fi
                                             fi
                                         else
                                             echo '⚠️ Warning: target/surefire-reports directory not found'
+                                            # Try to create it and check if tests were skipped
+                                            ${mavenCmd} surefire:test -DskipTests=false 2>&1 | tail -20 || true
+                                        fi
+                                        
+                                        if [ \${TEST_EXIT_CODE} -ne 0 ]; then
+                                            echo '⚠️ Tests completed with exit code: ' \${TEST_EXIT_CODE}
                                         fi
                                     """
                                     
@@ -136,19 +162,22 @@ pipeline {
                                             if [ \${FILE_SIZE} -eq 0 ]; then
                                                 echo '⚠️ Warning: jacoco.exec is empty - no coverage data collected'
                                             fi
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
                                         else
                                             echo '⚠️ Warning: jacoco.exec not found, tests may not have run'
-                                            echo 'Attempting to generate report anyway...'
-                                            ${mavenCmd} jacoco:report || echo 'JaCoCo report generation failed'
                                         fi
+                                        
+                                        echo 'Generating JaCoCo report...'
+                                        ${mavenCmd} jacoco:report || echo '⚠️ JaCoCo report generation failed or skipped'
                                     """
                                     
                                     // Copy JaCoCo HTML reports to coverage directory for publishing
                                     sh """
                                         mkdir -p coverage || true
                                         if [ -d target/site/jacoco ]; then
-                                            cp -r target/site/jacoco/* coverage/ || echo 'JaCoCo HTML report copy failed'
+                                            cp -r target/site/jacoco/* coverage/ || echo '⚠️ JaCoCo HTML report copy failed'
+                                            echo '✅ Coverage reports copied to coverage/'
+                                        else
+                                            echo '⚠️ Warning: target/site/jacoco directory not found'
                                         fi
                                     """
                                     
@@ -156,11 +185,13 @@ pipeline {
                                     sh """
                                         if [ -f target/site/jacoco/jacoco.xml ]; then
                                             echo '✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml'
-                                            cat target/site/jacoco/jacoco.xml | head -20 || echo 'Could not read XML report'
                                         else
                                             echo '⚠️ Warning: JaCoCo XML report not found at target/site/jacoco/jacoco.xml'
                                             echo 'Attempting to regenerate...'
-                                            ${mavenCmd} jacoco:report || echo 'Failed to regenerate JaCoCo report'
+                                            ${mavenCmd} jacoco:report || echo '⚠️ Failed to regenerate JaCoCo report'
+                                            if [ ! -f target/site/jacoco/jacoco.xml ]; then
+                                                echo '⚠️ Warning: Proceeding without coverage report'
+                                            fi
                                         fi
                                     """
                                     
@@ -170,9 +201,9 @@ pipeline {
                                             sh """
                                                 # Verify XML report exists before analysis
                                                 if [ -f target/site/jacoco/jacoco.xml ]; then
-                                                    echo 'Proceeding with SonarQube analysis with coverage report'
+                                                    echo '✅ Proceeding with SonarQube analysis with coverage report'
                                                 else
-                                                    echo 'Warning: Proceeding without coverage report'
+                                                    echo '⚠️ Warning: Proceeding without coverage report'
                                                 fi
                                                 # Run SonarQube analysis without qualitygate.wait to avoid build failure
                                                 # Quality Gate will be checked in a separate stage
@@ -186,6 +217,7 @@ pipeline {
                                     echo "✅ S0-ApiGateway build completed"
                                 } catch (Exception e) {
                                     echo "❌ Error building S0-ApiGateway: ${e.getMessage()}"
+                                    currentBuild.result = 'UNSTABLE'
                                 }
                             }
                         }
