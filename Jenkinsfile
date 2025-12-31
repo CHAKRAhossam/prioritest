@@ -390,7 +390,7 @@ pipeline {
                                         
                                         # Check if JaCoCo agent was attached
                                         echo 'Checking if JaCoCo agent was attached...'
-                                        if grep -i "jacoco agent" /tmp/maven-jacoco-output.log 2>/dev/null | grep -i "attached\|enabled\|loaded" >/dev/null; then
+                                        if grep -i "jacoco agent" /tmp/maven-jacoco-output.log 2>/dev/null | grep -iE "attached|enabled|loaded" >/dev/null; then
                                             echo '✅ JaCoCo agent appears to be attached (found in Maven output)'
                                         elif grep -i "jacoco" /tmp/maven-jacoco-output.log 2>/dev/null | head -5; then
                                             echo '⚠️ JaCoCo mentioned in output but agent attachment unclear'
