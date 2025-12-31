@@ -1474,7 +1474,7 @@ pipeline {
                                         tail -50 /tmp/pytest-output.log
                                         
                                         # Check for import errors in test collection
-                                        if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                        if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                             echo '❌ Import errors detected during test collection!'
                                             echo 'Import errors summary:'
                                             grep -E "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log | head -10
@@ -1488,12 +1488,12 @@ pipeline {
                                             echo '✅ All tests passed'
                                         elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
                                             echo '⚠️ No tests collected'
-                                            if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                            if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                                 echo '⚠️ This is likely due to import errors preventing test collection'
                                             fi
                                         else
                                             echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
-                                            if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                            if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                                 echo '⚠️ Import errors may have prevented tests from running'
                                             fi
                                         fi
@@ -1635,7 +1635,7 @@ pipeline {
                                         tail -50 /tmp/pytest-output.log
                                         
                                         # Check for import errors in test collection
-                                        if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                        if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                             echo '❌ Import errors detected during test collection!'
                                             echo 'Import errors summary:'
                                             grep -E "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log | head -10
@@ -1649,12 +1649,12 @@ pipeline {
                                             echo '✅ All tests passed'
                                         elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
                                             echo '⚠️ No tests collected'
-                                            if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                            if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                                 echo '⚠️ This is likely due to import errors preventing test collection'
                                             fi
                                         else
                                             echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
-                                            if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                            if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                                 echo '⚠️ Import errors may have prevented tests from running'
                                             fi
                                         fi
@@ -1902,7 +1902,7 @@ pipeline {
                                         tail -50 /tmp/pytest-output.log
                                         
                                         # Check for import errors in test collection
-                                        if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                        if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                             echo '❌ Import errors detected during test collection!'
                                             echo 'Import errors summary:'
                                             grep -E "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log | head -10
@@ -1916,12 +1916,12 @@ pipeline {
                                             echo '✅ All tests passed'
                                         elif [ \${TEST_EXIT_CODE} -eq 5 ]; then
                                             echo '⚠️ No tests collected'
-                                            if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                            if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                                 echo '⚠️ This is likely due to import errors preventing test collection'
                                             fi
                                         else
                                             echo "⚠️ Tests completed with exit code: \${TEST_EXIT_CODE}"
-                                            if grep -q "ImportError\|ModuleNotFoundError\|ERROR collecting" /tmp/pytest-output.log; then
+                                            if grep -qE "ImportError|ModuleNotFoundError|ERROR collecting" /tmp/pytest-output.log; then
                                                 echo '⚠️ Import errors may have prevented tests from running'
                                             fi
                                         fi
