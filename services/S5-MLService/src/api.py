@@ -612,6 +612,126 @@ def _generate_explanation(
     return f"{risk_level.upper()} risk - {', '.join(factors)}"
 
 
+@app.get("/api/v1/evaluate/confusion-matrix")
+def get_confusion_matrix():
+    """
+    Generate confusion matrix for the loaded model using test data.
+    Returns metrics and optionally saves visualization.
+    
+    This endpoint:
+    1. Loads test data from S4 processed output
+    2. Makes predictions using the loaded model
+    3. Calculates confusion matrix and metrics
+    4. Optionally saves visualization to output directory
+    
+    Returns:
+        Dictionary with confusion matrix, metrics, and visualization info
+    """
+    if model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Call /api/v1/train first."
+        )
+    
+    try:
+        # Load test data
+        data_path = os.environ.get("DATA_PATH", "/app/data")
+        test_path = os.path.join(data_path, "processed", "test.csv")
+        
+        if not os.path.exists(test_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Test data not found at {test_path}. Please run S4 pipeline first."
+            )
+        
+        # Load and prepare test data
+        test_df = pd.read_csv(test_path)
+        
+        # Prepare features (same logic as train_model.py)
+        cols_to_drop = []
+        for col in test_df.columns:
+            if test_df[col].dtype == 'object':
+                cols_to_drop.append(col)
+            elif col in ['commit_sha', 'repository_id', 'file_path', 'commit_date', 
+                         'test_class', 'class_name', 'repository', 'test_name',
+                         'commit_id', 'id']:
+                cols_to_drop.append(col)
+        
+        test_df = test_df.drop(columns=[c for c in cols_to_drop if c in test_df.columns], errors='ignore')
+        
+        # Get target
+        if 'target' in test_df.columns:
+            X_test = test_df.drop(columns=['target'])
+            y_test = test_df['target']
+        elif 'failed' in test_df.columns:
+            X_test = test_df.drop(columns=['failed'])
+            y_test = test_df['failed']
+        else:
+            X_test = test_df.iloc[:, :-1]
+            y_test = test_df.iloc[:, -1]
+        
+        # Ensure numeric only
+        X_test = X_test.select_dtypes(include=[np.number])
+        
+        # Make predictions
+        y_pred = model.predict(X_test)
+        
+        # Calculate confusion matrix
+        from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+        cm = confusion_matrix(y_test, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        
+        # Calculate metrics
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, average='binary', zero_division=0)
+        recall = recall_score(y_test, y_pred, average='binary', zero_division=0)
+        f1 = f1_score(y_test, y_pred, average='binary', zero_division=0)
+        
+        # Generate visualization if possible
+        output_path = os.environ.get("OUTPUT_PATH", "/app/output")
+        os.makedirs(output_path, exist_ok=True)
+        visualization_saved = False
+        visualization_path = None
+        
+        try:
+            from confusion_matrix_analysis import create_confusion_matrix_visualization
+            create_confusion_matrix_visualization(
+                y_test,
+                y_pred,
+                model_name="PRIORITEST ML Classifier",
+                save_path=os.path.join(output_path, "confusion_matrix.png")
+            )
+            visualization_saved = True
+            visualization_path = os.path.join(output_path, "confusion_matrix.png")
+        except Exception as e:
+            logger.warning(f"Could not save visualization: {e}")
+        
+        return {
+            "confusion_matrix": cm.tolist(),
+            "labels": ["No Risk (0)", "Risk (1)"],
+            "true_negative": int(tn),
+            "false_positive": int(fp),
+            "false_negative": int(fn),
+            "true_positive": int(tp),
+            "accuracy": float(accuracy),
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1_score": float(f1),
+            "total_samples": int(len(y_test)),
+            "visualization_saved": visualization_saved,
+            "visualization_path": visualization_path
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating confusion matrix: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating confusion matrix: {str(e)}"
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8005)
